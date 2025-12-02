@@ -1,0 +1,107 @@
+# universites/serializers.py
+from rest_framework import serializers
+from django.contrib.auth import get_user_model
+from django.utils.text import slugify
+from .models import Universite, Domaine, RoleUniversite
+import unicodedata
+
+User = get_user_model()
+
+
+# ------------------------------------------------------------------
+# 1. Université
+# ------------------------------------------------------------------
+class UniversiteSerializer(serializers.ModelSerializer):
+    # Champs calculés (read-only)
+    total_membres = serializers.SerializerMethodField()
+    total_domaines = serializers.SerializerMethodField()
+    logo_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Universite
+        fields = [
+            'id',
+            'nom',
+            'acronyme',
+            'slogan',
+            'logo',
+            'logo_url',
+            'site_web',
+            'created_at',
+            'total_membres',
+            'total_domaines',
+        ]
+        read_only_fields = ['id', 'created_at', 'total_membres', 'total_domaines', 'logo_url']
+
+    def get_total_membres(self, obj):
+        return obj.roles.count()  # related_name='roles' dans RoleUniversite.universite
+
+    def get_total_domaines(self, obj):
+        return obj.domaines.count()  # related_name='domaines' dans Domaine.universites
+
+    def get_logo_url(self, obj):
+        request = self.context.get('request')
+        if obj.logo and request:
+            return request.build_absolute_uri(obj.logo.url)
+        return None
+
+
+# ------------------------------------------------------------------
+# 2. Domaine
+# ------------------------------------------------------------------
+class DomaineSerializer(serializers.ModelSerializer):
+    # On expose aussi la liste des universités rattachées (lecture seule)
+    universites = UniversiteSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Domaine
+        fields = ['id', 'nom', 'slug', 'universites']
+        read_only_fields = ['id', 'slug']
+
+    # On surcharge create pour forcer la normalisation du slug
+    def create(self, validated_data):
+        nom = validated_data.get('nom')
+        cleaned = unicodedata.normalize('NFKD', nom).encode('ASCII', 'ignore').decode('ASCII')
+        slug = slugify(cleaned) or slugify(nom)
+        validated_data['slug'] = slug
+        return super().create(validated_data)
+
+
+# ------------------------------------------------------------------
+# 3. Rôle par université
+# ------------------------------------------------------------------
+class RoleUniversiteSerializer(serializers.ModelSerializer):
+    # Champs lisibles (read-only)
+    utilisateur_email = serializers.CharField(source='utilisateur.email', read_only=True)
+    utilisateur_full_name = serializers.SerializerMethodField()
+    universite_nom = serializers.CharField(source='universite.nom', read_only=True)
+
+    class Meta:
+        model = RoleUniversite
+        fields = [
+            'id',
+            'utilisateur',
+            'utilisateur_email',
+            'utilisateur_full_name',
+            'universite',
+            'universite_nom',
+            'role',
+            'created_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'utilisateur_email', 'utilisateur_full_name', 'universite_nom']
+
+    def get_utilisateur_full_name(self, obj):
+        return obj.utilisateur.get_full_name()
+
+
+# ------------------------------------------------------------------
+# 4. Stats rapides (utilisé par UniversiteStatsView)
+# ------------------------------------------------------------------
+class UniversiteStatsSerializer(serializers.Serializer):
+    # Serializer simple pour la vue stats (pas lié à un modèle)
+    universite = serializers.CharField()
+    acronyme = serializers.CharField()
+    created_at = serializers.DateTimeField()
+    total_membres = serializers.IntegerField()
+    membres_par_role = serializers.DictField(child=serializers.IntegerField())
+    total_domaines = serializers.IntegerField()

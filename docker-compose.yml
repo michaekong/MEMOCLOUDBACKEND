@@ -1,0 +1,32 @@
+version: "3.9"
+
+services:
+  api:
+    build: .
+    command: daphne config.asgi:application --port 8000 --bind 0.0.0.0
+    restart: always
+    ports:
+      - 8000:8000
+    env_file:
+      - .env.production
+    volumes:
+      - .:/app
+      - /var/www/camsecureplot/staticfiles:/app/staticfiles
+    networks:
+      - camsecureplot-network
+#      - reimca-network
+
+  redis:
+    image: redis:latest
+    restart: "on-failure"
+    ports:
+      - 6380:6379
+    networks:
+      - camsecureplot-network
+#      - reimca-network
+
+networks:
+  camsecureplot-network:
+#  reimca-network:
+#    external: true
+

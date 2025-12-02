@@ -1,0 +1,77 @@
+name: 🚀 Déploiement de CAMSECUREPLOT
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.8.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Create .env.production locally
+        run: |
+          echo "SECRET_KEY=${{ secrets.SECRET_KEY }}" > .env.production
+          echo "EMAIL_HOST=${{ secrets.EMAIL_HOST }}" >> .env.production
+          echo "EMAIL_PORT=${{ secrets.EMAIL_PORT }}" >> .env.production
+          echo "EMAIL_HOST_USER=${{ secrets.EMAIL_HOST_USER }}" >> .env.production
+          echo "EMAIL_HOST_PASSWORD=${{ secrets.EMAIL_HOST_PASSWORD }}" >> .env.production
+          echo "DEFAULT_FROM_EMAIL=${{ secrets.DEFAULT_FROM_EMAIL }}" >> .env.production
+          echo "EMAIL_USE_TLS=${{ secrets.EMAIL_USE_TLS }}" >> .env.production
+          echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> .env.production
+          echo "MAILERSEND_API_KEY=${{ secrets.MAILERSEND_API_KEY }}" >> .env.production
+          echo "REDIS_URL=${{ secrets.REDIS_URL }}" >> .env.production
+
+      - name: Ensure target directory exists on VPS
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+            mkdir -p ${{ secrets.VPS_PATH }}
+          "
+
+      - name: Copy env files to VPS
+        run: |
+          scp -o StrictHostKeyChecking=no .env.production ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ secrets.VPS_PATH }}/.env.production
+
+      - name: Clean and prepare files for transfer
+        run: |
+          # Nettoyer les fichiers potentiellement problématiques
+          find . -name "*.pyc" -delete
+          find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+          find . -name ".DS_Store" -delete
+
+      - name: Copy project to VPS with improved rsync
+        run: |
+          rsync -avz --no-perms --no-owner --no-group \
+            --exclude '.git' \
+            --exclude 'node_modules' \
+            --exclude '__pycache__' \
+            --exclude '*.pyc' \
+            --exclude '.DS_Store' \
+            --exclude '*.sqlite3' \
+            -e "ssh -o StrictHostKeyChecking=no" \
+            ./ ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ secrets.VPS_PATH}}/
+
+      - name: Set proper permissions on VPS
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+            cd ${{ secrets.VPS_PATH }} &&
+            find . -type f -exec chmod 644 {} \; &&
+            find . -type d -exec chmod 755 {} \; &&
+            chmod +x *.sh 2>/dev/null || true
+          "
+
+      - name: Deploy with Docker Compose
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+            cd ${{ secrets.VPS_PATH }} &&
+            docker compose down &&
+            docker compose up -d --build
+          "

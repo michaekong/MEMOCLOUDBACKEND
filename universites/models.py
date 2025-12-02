@@ -1,0 +1,88 @@
+# universites/models.py
+from django.db import models
+from django.conf import settings
+
+
+class Universite(models.Model):
+    nom = models.CharField(max_length=200, unique=True)
+    acronyme = models.CharField(max_length=20, unique=True)
+    slogan = models.TextField(blank=True)
+    logo = models.ImageField(upload_to="universites/logos/", blank=True, null=True)
+    site_web = models.URLField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["nom"]
+
+    def __str__(self):
+        return f"{self.nom} ({self.acronyme})"
+
+
+# models.py
+from django.utils.text import slugify
+import unicodedata
+
+from django.utils.text import slugify
+from django.core.exceptions import ValidationError
+
+
+class Domaine(models.Model):
+    nom = models.CharField(max_length=100, unique=True)
+    slug = models.SlugField(max_length=100, unique=True, blank=True)
+    universites = models.ManyToManyField(
+        'Universite', related_name='domaines', blank=True
+    )
+
+    class Meta:
+        ordering = ['nom']
+
+    def __str__(self):
+        return self.nom
+
+    def save(self, *args, **kwargs):
+        # normalise : enlève accents, espaces multiples, passe en minuscule
+        cleaned = unicodedata.normalize('NFKD', self.nom).encode('ASCII', 'ignore').decode('ASCII')
+        self.slug = slugify(cleaned) or slugify(self.nom)
+        super().save(*args, **kwargs)
+
+    def clean(self):
+        # Empêche la suppression si encore lié à des mémoires
+        # (on ajoutera la vraie protection via signal ou PROTECT plus tard)
+        if self.pk and self.memoires.exists():
+            raise ValidationError("Ce domaine est utilisé par des mémoires.")
+
+    @classmethod
+    def get_or_create_normalized(cls, nom: str):
+        """
+        Récupère ou crée un domaine à partir d’un nom brut.
+        Exemple : get_or_create_normalized("  MEdecine  ")
+        → renvoie le domaine « Médecine » (slug=medecine)
+        """
+        cleaned = unicodedata.normalize('NFKD', nom.strip()).encode('ASCII', 'ignore').decode('ASCII')
+        slug = slugify(cleaned) or slugify(nom.strip())
+        return cls.objects.get_or_create(slug=slug, defaults={'nom': nom.strip()})
+
+    
+class RoleUniversite(models.Model):
+    ROLE_CHOICES = [
+        ("standard", "Standard"),
+        ("professeur", "Professeur"),
+        ("admin", "Administrateur"),
+        ("superadmin", "Super Administrateur"),
+        ("bigboss", "BIGBOSS"),
+    ]
+    utilisateur = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="roles_univ"
+    )
+    universite = models.ForeignKey(
+        Universite, on_delete=models.CASCADE, related_name="roles"
+    )
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="standard")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("utilisateur", "universite")
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.utilisateur} – {self.universite} ({self.role})"
