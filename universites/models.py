@@ -1,7 +1,8 @@
-# universites/models.py
 from django.db import models
 from django.conf import settings
-
+from django.utils.text import slugify
+import unicodedata
+from django.core.exceptions import ValidationError
 
 class Universite(models.Model):
     nom = models.CharField(max_length=200, unique=True)
@@ -9,6 +10,7 @@ class Universite(models.Model):
     slogan = models.TextField(blank=True)
     logo = models.ImageField(upload_to="universites/logos/", blank=True, null=True)
     site_web = models.URLField(blank=True, null=True)
+    slug = models.SlugField(max_length=220, unique=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -17,13 +19,20 @@ class Universite(models.Model):
     def __str__(self):
         return f"{self.nom} ({self.acronyme})"
 
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            base = slugify(
+                unicodedata.normalize('NFKD', self.nom)
+                .encode('ASCII', 'ignore')
+                .decode('ASCII')
+            ) or slugify(self.nom)
 
-# models.py
-from django.utils.text import slugify
-import unicodedata
-
-from django.utils.text import slugify
-from django.core.exceptions import ValidationError
+            self.slug = base
+            counter = 1
+            while Universite.objects.filter(slug=self.slug).exclude(pk=self.pk).exists():
+                self.slug = f"{base}-{counter}"
+                counter += 1
+        super().save(*args, **kwargs)
 
 
 class Domaine(models.Model):
@@ -40,16 +49,19 @@ class Domaine(models.Model):
         return self.nom
 
     def save(self, *args, **kwargs):
-        # normalise : enlève accents, espaces multiples, passe en minuscule
-        cleaned = unicodedata.normalize('NFKD', self.nom).encode('ASCII', 'ignore').decode('ASCII')
-        self.slug = slugify(cleaned) or slugify(self.nom)
+        # Normalise le nom
+        cleaned = self.normalize_nom(self.nom)
+        self.slug = cleaned
         super().save(*args, **kwargs)
+
+    @staticmethod
+    def normalize_nom(nom: str) -> str:
+        return slugify(unicodedata.normalize('NFKD', nom).encode('ASCII', 'ignore').decode('ASCII'))
 
     def clean(self):
         # Empêche la suppression si encore lié à des mémoires
-        # (on ajoutera la vraie protection via signal ou PROTECT plus tard)
-        if self.pk and self.memoires.exists():
-            raise ValidationError("Ce domaine est utilisé par des mémoires.")
+        if self.pk and self.memoires.exists():  # Assurez-vous que `memoires` est un attribut valide
+            raise ValidationError("Ce domaine est utilisé par des mémoires. Vous ne pouvez pas le supprimer.")
 
     @classmethod
     def get_or_create_normalized(cls, nom: str):
@@ -59,10 +71,10 @@ class Domaine(models.Model):
         → renvoie le domaine « Médecine » (slug=medecine)
         """
         cleaned = unicodedata.normalize('NFKD', nom.strip()).encode('ASCII', 'ignore').decode('ASCII')
-        slug = slugify(cleaned) or slugify(nom.strip())
+        slug = cls.normalize_nom(cleaned)
         return cls.objects.get_or_create(slug=slug, defaults={'nom': nom.strip()})
 
-    
+
 class RoleUniversite(models.Model):
     ROLE_CHOICES = [
         ("standard", "Standard"),

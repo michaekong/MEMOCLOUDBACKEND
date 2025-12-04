@@ -15,6 +15,7 @@ from .views import (
     MemoireHistoryView,
     MemoirePreviewView,
     BatchUploadView,
+    MemoireCreateInUniversiteView,
     GlobalStatsView,
     NotationViewSet,
 )
@@ -33,7 +34,7 @@ urlpatterns = [
 
     # 2. Recherche full-text
     path('search/', MemoireSearchView.as_view(), name='memoire-search'),
-
+ path('<slug:univ_slug>/memoires/', MemoireCreateInUniversiteView.as_view(), name='memoire-create-in-univ'),
     # 3. Top mémoires
     path('top-downloaded/', TopDownloadedView.as_view(), name='memoire-top-downloaded'),
     path('top-rated/', TopRatedView.as_view(), name='memoire-top-rated'),

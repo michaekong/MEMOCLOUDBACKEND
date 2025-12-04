@@ -105,15 +105,6 @@ class ChangePasswordSerializer(serializers.Serializer):
     new_password = serializers.CharField(required=True, validators=[validate_password])
 
 
-# -------------------- Réinitialisation --------------------
-class ResetPasswordRequestSerializer(serializers.Serializer):
-    email = serializers.EmailField()
-
-
-class ResetPasswordConfirmSerializer(serializers.Serializer):
-    uidb64 = serializers.CharField()
-    token = serializers.CharField()
-    new_password = serializers.CharField(validators=[validate_password])
 
 
 # -------------------- Vérification d’e-mail (POST) --------------------
@@ -152,3 +143,93 @@ class UserDeactivateSerializer(serializers.Serializer):
         user.is_active = False
         user.save(update_fields=["is_active"])
         return user
+from rest_framework import serializers
+from django.contrib.auth import get_user_model
+from universites.models import Universite, RoleUniversite
+
+User = get_user_model()
+
+
+class RegisterViaUniversiteSerializer(serializers.ModelSerializer):
+    password1 = serializers.CharField(write_only=True, style={'input_type': 'password'})
+    password2 = serializers.CharField(write_only=True, style={'input_type': 'password'})
+    role = serializers.ChoiceField(choices=RoleUniversite.ROLE_CHOICES, default='standard')
+    universite_slug = serializers.SlugField(write_only=True)
+    realisation_linkedin = serializers.URLField(required=False, allow_blank=True)  # URL
+    photo_profil = serializers.ImageField(required=False, allow_null=True)          # Image
+
+    class Meta:
+        model = User
+        fields = [
+            'email',
+            'nom',
+            'prenom',
+            'sexe',
+            'password1',
+            'password2',
+            'role',
+            'universite_slug',
+            'realisation_linkedin',
+            'photo_profil',
+        ]
+
+    def validate(self, attrs):
+        if attrs['password1'] != attrs['password2']:
+            raise serializers.ValidationError({"password2": "Les mots de passe ne correspondent pas."})
+        if not Universite.objects.filter(slug=attrs['universite_slug']).exists():
+            raise serializers.ValidationError({"universite_slug": "Université inconnue."})
+        return attrs
+
+    def create(self, validated_data):
+        user_data = {
+            'email': validated_data['email'],
+            'nom': validated_data['nom'],
+            'prenom': validated_data['prenom'],
+            'sexe': validated_data['sexe'],
+            'realisation_linkedin': validated_data.get('realisation_linkedin'),
+            'photo_profil': validated_data.get('photo_profil'),
+        }
+        user = User(**user_data)
+        user.set_password(validated_data['password1'])
+        user.is_active = False  # jusqu’à vérification
+        user.save()
+
+        univ = Universite.objects.get(slug=validated_data['universite_slug'])
+        RoleUniversite.objects.create(
+            utilisateur=user,
+            universite=univ,
+            role=validated_data['role']
+        )
+        return user
+class UserRoleSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    role = serializers.ChoiceField(choices=RoleUniversite.ROLE_CHOICES, required=False, default='standard')
+class RoleSerializer(serializers.Serializer):
+
+    role = serializers.ChoiceField(choices=RoleUniversite.ROLE_CHOICES, required=False, default='standard')
+class RoleUpdateSerializer(serializers.Serializer):
+    role = serializers.ChoiceField(choices=RoleUniversite.ROLE_CHOICES)
+class InviteUserSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    role = serializers.ChoiceField(choices=RoleUniversite.ROLE_CHOICES, required=False, default='standard')
+class JoinWithCodeSerializer(serializers.Serializer):
+    code = serializers.CharField(required=True, help_text="Le code d'invitation à utiliser.")
+class ResetPasswordRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    new_password1 = serializers.CharField(write_only=True, style={'input_type': 'password'})
+    new_password2 = serializers.CharField(write_only=True, style={'input_type': 'password'})
+
+    def validate(self, attrs):
+        if attrs['new_password1'] != attrs['new_password2']:
+            raise serializers.ValidationError({"new_password2": "Les mots de passe ne correspondent pas."})
+        return attrs
+class ResetPasswordConfirmSerializer(serializers.Serializer):
+    uidb64 = serializers.CharField(required=True)
+    token = serializers.CharField(required=True)
+    new_password1 = serializers.CharField(write_only=True, style={'input_type': 'password'})
+    new_password2 = serializers.CharField(write_only=True, style={'input_type': 'password'})
+
+    def validate(self, attrs):
+        if attrs['new_password1'] != attrs['new_password2']:
+            raise serializers.ValidationError({"new_password2": "Les mots de passe ne correspondent pas."})
+        return attrs    

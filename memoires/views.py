@@ -358,4 +358,13 @@ class NotationViewSet(viewsets.ModelViewSet):
         qs = self.queryset.filter(memoire=memoire).select_related('utilisateur')
         serializer = self.get_serializer(qs, many=True)
         return Response(serializer.data)        
-        
+
+# memoires/views.py
+class MemoireCreateInUniversiteView(generics.CreateAPIView):
+    serializer_class = MemoireCreateSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def perform_create(self, serializer):
+        univ = get_object_or_404(Universite, slug=self.kwargs['univ_slug'])
+        memoire = serializer.save(auteur=self.request.user)
+        memoire.universites.add(univ)   # rattachement immédiat        

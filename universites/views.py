@@ -1,5 +1,6 @@
 # universites/views.py
 import csv
+from django.conf import settings
 import unicodedata
 from django.core.exceptions import ValidationError
 from django.contrib.postgres.search import TrigramSimilarity
@@ -13,8 +14,16 @@ from .serializers import (
     DomaineSerializer,
     RoleUniversiteSerializer,
 )
+from django.core.mail import send_mail, EmailMessage
+from django.template.loader import render_to_string
+from users.tokens import make_email_token, verify_email_token
+import logging
+from django.contrib.auth import get_user_model
+User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
+from users.permissions import(IsSuperAdminInUniversite,IsAdminInUniversite)
 # -------------------- Université (CRUD) --------------------
 class UniversiteViewSet(viewsets.ModelViewSet):
     queryset = Universite.objects.all()
@@ -25,7 +34,7 @@ class UniversiteViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [permissions.IsAdminUser()]
+            return [IsSuperAdminInUniversite()]
         return [permissions.IsAuthenticated()]
 
 
@@ -244,7 +253,7 @@ class DomaineViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [permissions.IsAdminUser()]
+            return [IsAdminInUniversite()]
         return [permissions.IsAuthenticated()]
 
     def perform_create(self, serializer):
@@ -290,3 +299,50 @@ class DomaineByUniversiteListView(generics.ListAPIView):
     def get_queryset(self):
         univ = get_object_or_404(Universite, pk=self.kwargs['pk'])
         return univ.domaines.all()
+from universites.models import Universite
+from .serializers import RegisterViaUniversiteSerializer
+
+
+class RegisterViaUniversiteView(generics.CreateAPIView):
+    """
+    POST /api/auth/register-via-universite/
+    Crée un compte + l’ajoute immédiatement à l’université choisie.
+    """
+    serializer_class = RegisterViaUniversiteSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def perform_create(self, serializer):
+        user = serializer.save()
+        # envoi du mail de vérification (réutilisation du système existant)
+        token = make_email_token(user.id)
+        verify_url = f"{settings.FRONTEND_URL}/verify-email/?token={token}"
+
+        html_content = render_to_string(
+            "emails/verify_email.html", {"verification_url": verify_url}
+        )
+        email = EmailMessage(
+            subject="Vérifiez votre adresse email",
+            body=html_content,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[user.email],
+        )
+        email.content_subtype = "html"
+        email.send(fail_silently=False)
+        logger.info(f"Email de vérification envoyé à {user.email}")    
+# universites/views.py
+class DomaineCreateInUniversiteView(generics.CreateAPIView):
+    serializer_class = DomaineSerializer
+    permission_classes = [IsAdminInUniversite]   # ou [IsAuthenticated] si tu veux plus souple
+
+    def perform_create(self, serializer):
+        univ = get_object_or_404(Universite, slug=self.kwargs['univ_slug'])
+        nom = serializer.validated_data['nom']
+        cleaned = unicodedata.normalize('NFKD', nom).encode('ASCII', 'ignore').decode('ASCII')
+        slug = slugify(cleaned) or slugify(nom)
+        # dé-duplication
+        counter = 1
+        while Domaine.objects.filter(slug=slug).exists():
+            slug = f"{slugify(nom)}-{counter}"
+            counter += 1
+        domaine = serializer.save(slug=slug)
+        domaine.universites.add(univ)   # rattachement immédiat        

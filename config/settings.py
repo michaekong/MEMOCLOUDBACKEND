@@ -227,6 +227,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://frontcamsec.vercel.app",
     "https://camsecplots.netlify.app",
     "http://127.0.0.1:5500",
+    "http://127.0.0.1:5501",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -238,6 +239,7 @@ CSRF_TRUSTED_ORIGINS = [
     "https://camsecureplot.reimca-app.com",
     "https://frontcamsec.vercel.app",
     "http://127.0.0.1:5500",
+    "http://127.0.0.1:5501",
 ]
 
 CORS_ALLOW_METHODS = [
@@ -266,3 +268,7 @@ CHANNEL_LAYERS = {
         },
     },
 }
+from cryptography.fernet import Fernet
+print(Fernet.generate_key().decode())  # copier/coller dans settings.py
+# clé 32 bytes base64 → générée une fois : Fernet.generate_key()
+INVITE_CODE_KEY = b'0MYfxmqMEYbOeBXxAnC_IRA2vdYTaG7wWQ5HMy1NXD8==='

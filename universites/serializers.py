@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.utils.text import slugify
 from .models import Universite, Domaine, RoleUniversite
 import unicodedata
-
+from users.serializers import RegisterSerializer
 User = get_user_model()
 
 
@@ -12,7 +12,6 @@ User = get_user_model()
 # 1. Université
 # ------------------------------------------------------------------
 class UniversiteSerializer(serializers.ModelSerializer):
-    # Champs calculés (read-only)
     total_membres = serializers.SerializerMethodField()
     total_domaines = serializers.SerializerMethodField()
     logo_url = serializers.SerializerMethodField()
@@ -27,11 +26,12 @@ class UniversiteSerializer(serializers.ModelSerializer):
             'logo',
             'logo_url',
             'site_web',
+            'slug',
             'created_at',
             'total_membres',
             'total_domaines',
         ]
-        read_only_fields = ['id', 'created_at', 'total_membres', 'total_domaines', 'logo_url']
+        read_only_fields = ['id', 'created_at', 'slug', 'total_membres', 'total_domaines', 'logo_url']
 
     def get_total_membres(self, obj):
         return obj.roles.count()  # related_name='roles' dans RoleUniversite.universite
@@ -105,3 +105,36 @@ class UniversiteStatsSerializer(serializers.Serializer):
     total_membres = serializers.IntegerField()
     membres_par_role = serializers.DictField(child=serializers.IntegerField())
     total_domaines = serializers.IntegerField()
+class RegisterViaUniversiteSerializer(RegisterSerializer):
+    """
+    Hérite de RegisterSerializer (double password, validation, etc.)
+    On ajoute uniquement les champs université + rôle
+    """
+    universite_id = serializers.IntegerField(write_only=True)
+    role = serializers.ChoiceField(
+        choices=RoleUniversite.ROLE_CHOICES,
+        default="standard"
+    )
+
+    class Meta(RegisterSerializer.Meta):
+        # on garde tous les champs du parent + les 2 nouveaux
+        fields = RegisterSerializer.Meta.fields + ["universite_id", "role"]
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)  # validation mots de passe
+        if not Universite.objects.filter(id=attrs["universite_id"]).exists():
+            raise serializers.ValidationError({"universite_id": "Université inconnue."})
+        return attrs
+
+    def create(self, validated_data):
+        # 1. créer le user via le parent
+        user = super().create(validated_data)  # is_active=False déjà mis
+
+        # 2. rattacher à l’université
+        univ = Universite.objects.get(id=validated_data.pop("universite_id"))
+        RoleUniversite.objects.create(
+            utilisateur=user,
+            universite=univ,
+            role=validated_data.pop("role")
+        )
+        return user    

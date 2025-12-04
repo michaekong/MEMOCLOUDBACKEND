@@ -6,6 +6,7 @@ from django.utils import timezone
 from django.contrib.auth.hashers import make_password
 from django.core.validators import RegexValidator
 from .managers import CustomUserManager
+from universites.models import Universite,RoleUniversite
 
 logger = logging.getLogger(__name__)
 
@@ -79,3 +80,87 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
     def get_short_name(self):
         return self.prenom
+# universites/models.py
+import secrets, uuid
+from django.utils import timezone
+from cryptography.fernet import Fernet
+from django.conf import settings
+
+import secrets
+import uuid
+from django.conf import settings
+from django.utils import timezone
+from cryptography.fernet import Fernet
+
+
+class InvitationCode(models.Model):
+    """
+    Code d’invitation unique, chiffré, à usage unique,
+    avec rôle **déjà défini** par l’admin qui envoie l’invitation.
+    """
+    code = models.CharField(max_length=64, unique=True, db_index=True)  # version chiffrée
+    universite = models.ForeignKey(
+        Universite, on_delete=models.CASCADE, related_name="invitation_codes"
+    )
+    role = models.CharField(
+        max_length=20, choices=RoleUniversite.ROLE_CHOICES, default="standard"
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="codes_created"
+    )
+    used_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="codes_used",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(
+        default=timezone.now() + timezone.timedelta(days=7)
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    # ------------------------------------------------------------------
+    #  Chiffrement
+    # ------------------------------------------------------------------
+    _cipher = None
+
+    @staticmethod
+    def _get_cipher() -> Fernet:
+        if InvitationCode._cipher is None:
+            key = settings.INVITE_CODE_KEY  # 32 bytes base64 dans settings.py
+            InvitationCode._cipher = Fernet(key)
+        return InvitationCode._cipher
+
+    @staticmethod
+    def encrypt(raw: str) -> str:
+        return InvitationCode._get_cipher().encrypt(raw.encode()).decode()
+
+    @staticmethod
+    def decrypt(enc: str) -> str:
+        return InvitationCode._get_cipher().decrypt(enc.encode()).decode()
+
+    # ------------------------------------------------------------------
+    #  Life-cycle
+    # ------------------------------------------------------------------
+    def save(self, *args, **kwargs):
+        if not self.code:
+            raw = secrets.token_urlsafe(32)  # 256 bits
+            self.code = InvitationCode.encrypt(raw)
+        super().save(*args, **kwargs)
+
+    @property
+    def is_expired(self):
+        return timezone.now() > self.expires_at
+
+    @property
+    def is_used(self):
+        return self.used_by is not None
+
+    def mark_used(self, user):
+        self.used_by = user
+        self.save(update_fields=["used_by"])
+        

@@ -11,6 +11,7 @@ from .views import (
     MembresListView,
     MembreRoleUpdateView,
     MembreRemoveView,
+    DomaineCreateInUniversiteView,
     BulkDeleteUniversitesView,
     ExportUniversitesCSVView,
     DomaineSuggestView,
@@ -38,4 +39,5 @@ urlpatterns = [
     # ------- domaines extensions -------
     path('domaines/suggest/', DomaineSuggestView.as_view(), name='domaine-suggest'),
     path('universites/<int:pk>/domaines/', DomaineByUniversiteListView.as_view(), name='univ-domaines'),
+    path('<slug:univ_slug>/domaines/', DomaineCreateInUniversiteView.as_view(), name='domaine-create-in-univ'),
 ]
