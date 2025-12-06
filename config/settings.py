@@ -211,7 +211,7 @@ SPECTACULAR_SETTINGS = {
     'SERVE_INCLUDE_SCHEMA': False,  # swagger-ui & redoc séparés
 }
 
-FRONTEND_URL = "https://camsecplots.netlify.app"
+FRONTEND_URL = "https://memocloudfront.vercel.app",
 
 CORS_ALLOW_HEADERS = [
     "accept",
@@ -226,8 +226,8 @@ CORS_ALLOW_HEADERS = [
 ]
 
 CORS_ALLOWED_ORIGINS = [
-    "https://camsecureplot.reimca-app.com",
-    "https://frontcamsec.vercel.app",
+    "https://memocloudbackend.onrender.com"
+    "https://memocloudfront.vercel.app",
     "https://camsecplots.netlify.app",
     "http://127.0.0.1:5500",
     "http://127.0.0.1:5501",
@@ -243,6 +243,7 @@ CSRF_TRUSTED_ORIGINS = [
     "https://camsecureplot.reimca-app.com",
     "https://frontcamsec.vercel.app",
     "http://127.0.0.1:5500",
+    "https://memocloudbackend.onrender.com",
     "http://127.0.0.1:5501",
 ]
 
