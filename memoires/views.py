@@ -1,370 +1,232 @@
-# memoires/views.py
-import csv
-from django.core.exceptions import ValidationError
-from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
-from django.db.models import Count, Avg
-from django.contrib.postgres.search import SearchVector, SearchQuery, SearchRank
-from rest_framework import viewsets, permissions, filters, generics, status
-from rest_framework.response import Response
-from rest_framework.generics import CreateAPIView
-from django.contrib.auth import get_user_model
-from django.core.mail import send_mail
-from django.conf import settings
+from django.db.models import Avg, Count
+from rest_framework import viewsets, permissions, status, filters, generics
+from rest_framework.decorators import action
 
-from .models import Memoire, Encadrement, Signalement
-from .serializers import (
-    MemoireListSerializer,
-    MemoireCreateSerializer,
-    EncadrementSerializer,
-    MemoireBulkCSVSerializer,
-    SignalementSerializer,
-    HistoricalMemoireSerializer,
-    BatchUploadSerializer,
+from rest_framework.response import Response
+from drf_spectacular.utils import extend_schema, extend_schema_view
+from memoires.models import Memoire, Encadrement
+from memoires.serializers import (
+    MemoireUniversiteListSerializer,
+    MemoireUniversiteCreateSerializer,
+    EncadrementAddSerializer,
+    MemoireUniversiteStatsSerializer,
 )
-from universites.models import Universite, Domaine
+from universites.models import Universite
+from universites.permissions import (
+    IsMemberOfUniversite,
+    IsAdminOfUniversite,
+    IsAuthorOrAdminOfUniversite,
+)
+from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
 
-# ------------------------------------------------------------------
-# 1. CRUD mémoires & encadrements
-# ------------------------------------------------------------------
-class MemoireViewSet(viewsets.ModelViewSet):
-    queryset = Memoire.objects.all()
-    permission_classes = [permissions.IsAuthenticated]
+@extend_schema_view(
+    list=extend_schema(summary="Liste des mémoires de l’université"),
+    retrieve=extend_schema(summary="Détail d’un mémoire"),
+    create=extend_schema(summary="Déposer un mémoire"),
+    update=extend_schema(summary="Modifier un mémoire"),
+    partial_update=extend_schema(summary="Mise à jour partielle"),
+    destroy=extend_schema(summary="Supprimer un mémoire"),
+    stats=extend_schema(summary="Statistiques mémoires université"),
+)
+class UniversiteMemoireViewSet(viewsets.ModelViewSet):
+    """
+    CRUD complet **filtré par université (slug)**.
+    """
+
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['titre', 'resume', 'auteur__nom', 'auteur__prenom']
-    ordering_fields = ['annee', 'created_at']
+    search_fields = ["titre", "resume", "auteur__nom", "auteur__prenom"]
+    ordering_fields = ["annee", "created_at"]
 
-    def get_serializer_class(self):
-        
-        if self.action in ['create', 'update', 'partial_update']:
-            return MemoireCreateSerializer
-        return MemoireListSerializer
-
-    def get_permissions(self):
-        if self.action == 'create':
-            return [permissions.IsAuthenticated()]
-        if self.action in ['list', 'retrieve', 'search', 'preview']:
-            return [permissions.AllowAny()]
-     
-        return [permissions.IsAuthenticated()]
+    def get_universite(self):
+        return get_object_or_404(Universite, slug=self.kwargs["univ_slug"])
 
     def get_queryset(self):
-        qs = super().get_queryset()
-        univ_id = self.request.query_params.get('universite')
-        domaine_id = self.request.query_params.get('domaine')
-        annee = self.request.query_params.get('annee')
-        if univ_id:
-            qs = qs.filter(universites__id=univ_id)
-        if domaine_id:
-            qs = qs.filter(domaines__id=domaine_id)
+        qs = Memoire.objects.filter(universites=self.get_universite()).distinct()
+        annee = self.request.query_params.get("annee")
+        domaine = self.request.query_params.get("domaine")
         if annee:
             qs = qs.filter(annee=annee)
-        return qs.distinct()
-
-    def perform_create(self, serializer):
-        serializer.save(auteur=self.request.user)
-
-    def perform_destroy(self, instance):
-        if instance.encadrements.exists() or instance.notations.exists() or instance.telechargements.exists():
-            raise ValidationError("Impossible de supprimer : mémoire lié à des données.")
-        super().perform_destroy(instance)
-
-
-class EncadrementViewSet(viewsets.ModelViewSet):
-    queryset = Encadrement.objects.all()
-    serializer_class = EncadrementSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        qs = super().get_queryset()
-        memoire_id = self.request.query_params.get('memoire')
-        if memoire_id:
-            qs = qs.filter(memoire_id=memoire_id)
+        if domaine:
+            qs = qs.filter(domaines__slug=domaine)
         return qs
 
+    def get_serializer_class(self):
+        if self.action in ("create", "update", "partial_update"):
+            return MemoireUniversiteCreateSerializer
+        return MemoireUniversiteListSerializer
+
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return [permissions.AllowAny()]
+        if self.action == "create":
+            return [IsMemberOfUniversite()]
+        return [IsAuthorOrAdminOfUniversite()]
+
     def perform_create(self, serializer):
-        memoire = serializer.validated_data['memoire']
-        if not memoire.universites.filter(
-            roles__utilisateur=self.request.user,
-            roles__role__in=['admin', 'superadmin', 'bigboss']
-        ).exists():
-            raise ValidationError("Vous n’êtes pas administrateur d’une université liée à ce mémoire.")
-        serializer.save()
+        univ = self.get_universite()
+        memoire = serializer.save(auteur=self.request.user)
+        memoire.universites.add(univ)
 
-
-# ------------------------------------------------------------------
-# 2. Batch CSV
-# ------------------------------------------------------------------
-class MemoireBulkCSVView(CreateAPIView):
-    """
-    POST /api/memoires/batch-csv/
-    Form-data : csv_file
-    """
-    serializer_class = MemoireBulkCSVSerializer
-    permission_classes = [permissions.IsAdminUser]
-
-    def post(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        result = serializer.save()
-        return Response(result, status=status.HTTP_201_CREATED)
-
-
-# ------------------------------------------------------------------
-# 3. Recherche & filtres
-# ------------------------------------------------------------------
-class MemoireSearchView(generics.ListAPIView):
-    serializer_class = MemoireListSerializer
-    permission_classes = [permissions.AllowAny]
-
-    def get_queryset(self):
-        q = self.request.GET.get('q', '')
-        if len(q) < 3:
-            return Memoire.objects.none()
-        search_vector = SearchVector('titre', 'resume')
-        search_query = SearchQuery(q)
-        return (
-            Memoire.objects.annotate(
-                search=search_vector,
-                rank=SearchRank(search_vector, search_query)
-            )
-            .filter(search=search_query)
-            .order_by('-rank')
+    @extend_schema(
+        summary="Statistiques mémoires de l’université",
+        responses={200: MemoireUniversiteStatsSerializer},
+    )
+    @action(detail=False, methods=["get"], url_path="stats")
+    def stats(self, request, **kwargs):
+        univ = self.get_universite()
+        qs = self.get_queryset()
+        return Response(
+            MemoireUniversiteStatsSerializer(
+                {
+                    "universite": univ.nom,
+                    "total_memoires": qs.count(),
+                    "total_telechargements": sum(m.nb_telechargements() for m in qs),
+                    "note_moyenne": round(
+                        qs.aggregate(avg=Avg("notations__note"))["avg"] or 0, 2
+                    ),
+                    "top_domaines": list(
+                        qs.values("domaines__nom")
+                        .annotate(nb=Count("id"))
+                        .order_by("-nb")[:5]
+                    ),
+                }
+            ).data
         )
 
 
-class MemoireFilterView(generics.ListAPIView):
-    serializer_class = MemoireListSerializer
+class MemoireAnneesView(generics.GenericAPIView):
+    permission_classes = [permissions.AllowAny]
 
-    def get_queryset(self):
-        qs = Memoire.objects.all()
-        annee_min = self.request.GET.get('annee_min')
-        annee_max = self.request.GET.get('annee_max')
-        note_min = self.request.GET.get('note_min')
-        dl_min = self.request.GET.get('dl_min')
-
-        if annee_min:
-            qs = qs.filter(annee__gte=annee_min)
-        if annee_max:
-            qs = qs.filter(annee__lte=annee_max)
-        if note_min:
-            qs = qs.filter(notations__note__gte=note_min).distinct()
-        if dl_min:
-            qs = qs.annotate(dl_count=Count('telechargements')).filter(dl_count__gte=dl_min)
-        return qs
+    def get(self, request, *args, **kwargs):
+        annees = (
+            Memoire.objects.filter(universites__slug=kwargs["univ_slug"])
+            .values_list("annee", flat=True)
+            .distinct()
+            .order_by("-annee")
+        )
+        return Response({"annees": annees}) 
 
 
-# ------------------------------------------------------------------
-# 4. Top mémoires
-# ------------------------------------------------------------------
-class TopDownloadedView(generics.ListAPIView):
-    serializer_class = MemoireListSerializer
+class MemoireEncadrementView(generics.GenericAPIView):
+    """
+    POST / DELETE  /api/universites/<slug>/memoires/<id>/encadrer/
+    """
 
-    def get_queryset(self):
-        return Memoire.objects.annotate(dl=Count('telechargements')).order_by('-dl')[:10]
+    permission_classes = [IsAdminOfUniversite]
+
+    @extend_schema(
+        summary="Ajouter un encadreur à un mémoire",
+        request=EncadrementAddSerializer,
+        responses={201: {"detail": "Encadreur ajouté."}},
+    )
+    def post(self, request, univ_slug, pk):
+        ser = EncadrementAddSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+
+        univ = get_object_or_404(Universite, slug=univ_slug)
+        memoire = get_object_or_404(Memoire, pk=pk, universites=univ)
+        encadreur = get_object_or_404(User, pk=ser.validated_data["encadreur_id"])
+
+        enc, created = Encadrement.objects.get_or_create(
+            memoire=memoire, encadreur=encadreur
+        )
+        if not created:
+            return Response({"detail": "Déjà encadreur."}, status=status.HTTP_200_OK)
+        return Response({"detail": "Encadreur ajouté."}, status=status.HTTP_201_CREATED)
+
+    @extend_schema(
+        summary="Retirer un encadreur",
+        request=EncadrementAddSerializer,
+        responses={204: None},
+    )
+    def delete(self, request, univ_slug, pk):
+        ser = EncadrementAddSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+
+        univ = get_object_or_404(Universite, slug=univ_slug)
+        memoire = get_object_or_404(Memoire, pk=pk, universites=univ)
+        Encadrement.objects.filter(
+            memoire=memoire,
+            encadreur_id=ser.validated_data["encadreur_id"],
+        ).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class TopRatedView(generics.ListAPIView):
-    serializer_class = MemoireListSerializer
+# memoires/views.py
+import fitz
+from django.core.files.base import ContentFile
+import os
+from django.conf import settings
 
-    def get_queryset(self):
-        return Memoire.objects.annotate(avg=Avg('notations__note')).order_by('-avg')[:10]
+
+class MemoirePreviewImageView(generics.RetrieveAPIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        memoire = get_object_or_404(
+            Memoire, pk=kwargs["pk"], universites__slug=kwargs["univ_slug"]
+        )
+        if not memoire.fichier_pdf:
+            return Response({"detail": "Pas de PDF"}, status=404)
+
+        # Génération 1ère page → PNG
+        doc = fitz.open(memoire.fichier_pdf.path)
+        page = doc.load_page(0)
+        pix = page.get_pixmap()
+        img_name = f"preview_{memoire.id}.png"
+        img_path = os.path.join(settings.MEDIA_ROOT, "memoires/previews", img_name)
+        os.makedirs(os.path.dirname(img_path), exist_ok=True)
+        pix.save(img_path)
+        doc.close()
+
+        url = request.build_absolute_uri(
+            settings.MEDIA_URL + "memoires/previews/" + img_name
+        )
+        return Response({"preview_url": url})
 
 
-# ------------------------------------------------------------------
-# 5. Dashboards
-# ------------------------------------------------------------------
+# memoires/views.py
 class AuteurDashboardView(generics.GenericAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
-    def get(self, request):
+    def get(self, request, *args, **kwargs):
+        print("Slug reçu :", kwargs.get("univ_slug"))
+        univ = get_object_or_404(Universite, slug=kwargs["univ_slug"])
+        print("Université trouvée :", univ)
+
         user = request.user
-        memoires = user.memoires.all()
-        return Response({
-            "total_memoires": memoires.count(),
-            "total_telechargements": sum(m.nb_telechargements() for m in memoires),
-            "note_moyenne": round(
-                sum(m.note_moyenne() for m in memoires) / max(memoires.count(), 1), 2
-            ),
-            "annees": list(memoires.values_list('annee', flat=True).distinct()),
-        })
+        print("User connecté :", user)
 
+        memoires = user.memoires.filter(universites=univ)
+        print("Memoires count :", memoires.count())
 
-class UniversiteDashboardView(generics.GenericAPIView):
-    permission_classes = [permissions.IsAuthenticated]
+        if not memoires.exists():
+            print("Aucun mémoire → on renvoie 404")
+            # dashboard vide mais valide
+            return Response(
+                {
+                    "total_memoires": 0,
+                    "total_telechargements": 0,
+                    "note_moyenne": 0,
+                    "classement": [],
+                }
+            )
 
-    def get(self, request, pk):
-        univ = get_object_or_404(Universite, pk=pk)
-        if not univ.roles.filter(utilisateur=request.user, role__in=['admin', 'superadmin', 'bigboss']).exists():
-            return Response({"detail": "Non autorisé."}, status=status.HTTP_403_FORBIDDEN)
-        memoires = Memoire.objects.filter(universites=univ)
-        return Response({
-            "nom": univ.nom,
-            "total_memoires": memoires.count(),
-            "total_telechargements": sum(m.nb_telechargements() for m in memoires),
-            "top_domaines": list(
-                memoires.values('domaines__nom')
-                .annotate(nb=Count('id'))
-                .order_by('-nb')[:5]
-            ),
-        })
-
-
-# ------------------------------------------------------------------
-# 6. Export CSV
-# ------------------------------------------------------------------
-class ExportMemoiresCSVView(generics.GenericAPIView):
-    permission_classes = [permissions.IsAdminUser]
-
-    def get(self, request):
-        response = HttpResponse(content_type='text/csv')
-        response['Content-Disposition'] = 'attachment; filename="memoires.csv"'
-        writer = csv.writer(response)
-        writer.writerow(['Titre', 'Auteur', 'Année', 'Note moy.', 'Téléchargements'])
-        for m in Memoire.objects.all():
-            writer.writerow([m.titre, m.auteur.get_full_name(), m.annee, m.note_moyenne(), m.nb_telechargements()])
-        return response
-
-
-# ------------------------------------------------------------------
-# 7. Signalement
-# ------------------------------------------------------------------
-class SignalementView(generics.CreateAPIView):
-    queryset = Signalement.objects.all()
-    serializer_class = SignalementSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def perform_create(self, serializer):
-        serializer.save(utilisateur=self.request.user)
-
-
-# ------------------------------------------------------------------
-# 8. Historique
-# ------------------------------------------------------------------
-class MemoireHistoryView(generics.ListAPIView):
-    serializer_class = HistoricalMemoireSerializer
-    permission_classes = [permissions.IsAdminUser]
-
-    def get_queryset(self):
-        return Memoire.objects.get(pk=self.kwargs['pk']).history.all()
-
-
-# ------------------------------------------------------------------
-# 9. Preview PDF
-# ------------------------------------------------------------------
-class MemoirePreviewView(generics.RetrieveAPIView):
-    queryset = Memoire.objects.all()
-    serializer_class = MemoireListSerializer
-    permission_classes = [permissions.AllowAny]
-
-    def retrieve(self, request, *args, **kwargs):
-        memoire = self.get_object()
-        return Response({
-            "titre": memoire.titre,
-            "pdf_url": request.build_absolute_uri(memoire.fichier_pdf.url),
-            "pages": None,  # ou extraction via PyPDF2 si besoin
-        })
-
-
-# ------------------------------------------------------------------
-# 10. Batch ZIP
-# ------------------------------------------------------------------
-class BatchUploadView(generics.CreateAPIView):
-    serializer_class = BatchUploadSerializer
-    permission_classes = [permissions.IsAdminUser]
-
-    def post(self, request):
-        zip_file = request.FILES['zip']
-        # Ici : logique d’extraction, création des mémoires, etc.
-        # Retour fictif pour l’exemple
-        return Response({"created": 42}, status=status.HTTP_201_CREATED)
-
-
-# ------------------------------------------------------------------
-# 11. Stats globales
-# ------------------------------------------------------------------
-class GlobalStatsView(generics.GenericAPIView):
-    permission_classes = [permissions.AllowAny]
-
-    def get(self, request):
-        from interactions.models import Telechargement, NotationCommentaire
-        return Response({
-            "total_memoires": Memoire.objects.count(),
-            "total_telechargements": Telechargement.objects.count(),
-            "total_commentaires": NotationCommentaire.objects.exclude(commentaire='').count(),
-            "note_moyenne_globale": round(
-                Memoire.objects.aggregate(avg=Avg('notations__note'))['avg'] or 0, 2
-            ),
-        })
-from rest_framework import viewsets, permissions, status
-from rest_framework.decorators import action
-from rest_framework.response import Response
-from .models import Notation
-from .serializers import NotationSerializer
-
-class NotationViewSet(viewsets.ModelViewSet):
-    queryset = Notation.objects.all()
-    serializer_class = NotationSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        # Utilisateur standard : ne voit que ses notes
-        if self.request.user.is_staff:
-            return self.queryset
-        return self.queryset.filter(utilisateur=self.request.user)
-
-    def create(self, request, *args, **kwargs):
-        memoire_id = request.data.get('memoire')
-        note = request.data.get('note')
-
-        if not memoire_id or note is None:
-            return Response({'detail': 'mémoire et note requis'}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            memoire = Memoire.objects.get(pk=memoire_id)
-        except Memoire.DoesNotExist:
-            return Response({'detail': 'Mémoire introuvable'}, status=status.HTTP_404_NOT_FOUND)
-
-        if not (1 <= int(note) <= 5):
-            return Response({'detail': 'La note doit être entre 1 et 5'}, status=status.HTTP_400_BAD_REQUEST)
-
-        notation, created = Notation.objects.get_or_create(
-            utilisateur=request.user,
-            memoire=memoire,
-            defaults={'note': note}
+        return Response(
+            {
+                "total_memoires": memoires.count(),
+                "total_telechargements": sum(m.nb_telechargements() for m in memoires),
+                "note_moyenne": round(
+                    sum(m.note_moyenne() for m in memoires) / max(memoires.count(), 1), 2
+                ),
+                "classement": list(
+                    memoires.annotate(dl=Count("telechargements"))
+                    .order_by("-dl")
+                    .values("id", "titre", "dl")[:5]
+                ),
+            }
         )
-        if not created:
-            # Mise à jour si déjà noté
-            notation.note = note
-            notation.save()
-
-        serializer = self.get_serializer(notation)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-    @action(detail=False, methods=['get'], url_path='par-memoire/(?P<memoire_id>\d+)')
-    def par_memoire(self, request, memoire_id=None):
-        """Récupérer toutes les notes d’un mémoire (auteur ou staff)"""
-        try:
-            memoire = Memoire.objects.get(pk=memoire_id)
-        except Memoire.DoesNotExist:
-            return Response({'detail': 'Mémoire introuvable'}, status=status.HTTP_404_NOT_FOUND)
-
-        if request.user != memoire.auteur and not request.user.is_staff:
-            return Response({'detail': 'Non autorisé'}, status=status.HTTP_403_FORBIDDEN)
-
-        qs = self.queryset.filter(memoire=memoire).select_related('utilisateur')
-        serializer = self.get_serializer(qs, many=True)
-        return Response(serializer.data)        
-
-# memoires/views.py
-class MemoireCreateInUniversiteView(generics.CreateAPIView):
-    serializer_class = MemoireCreateSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def perform_create(self, serializer):
-        univ = get_object_or_404(Universite, slug=self.kwargs['univ_slug'])
-        memoire = serializer.save(auteur=self.request.user)
-        memoire.universites.add(univ)   # rattachement immédiat        

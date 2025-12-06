@@ -23,7 +23,8 @@ urlpatterns = [
 
     # Apps métiers
     path('api/auth/', include('users.urls')),
-    path('api/docs/', include('api.urls')),          # Swagger / ReDoc
+    path('api/docs/', include('api.urls')),    
+    # Swagger / ReDoc
     path('api/universites/', include('universites.urls')),
     path('api/memoires/', include('memoires.urls')),
     path('api/interactions/', include('interactions.urls')),

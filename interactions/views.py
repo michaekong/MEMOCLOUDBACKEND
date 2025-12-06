@@ -1,148 +1,392 @@
-# interactions/views.py
-from rest_framework import viewsets, permissions, status
+# interactions/open_interactions_views.py
+from django.shortcuts import get_object_or_404
+from rest_framework import generics, permissions, status, viewsets, serializers
 from rest_framework.decorators import action
+from django.db.models import Avg, Count
 from rest_framework.response import Response
-from django.db.models import Count
-from .models import Telechargement, Like, Commentaire
-from .serializers import TelechargementSerializer, LikeSerializer, CommentaireSerializer
-from memoires.models import Memoire
+from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiTypes
+from interactions.models import Telechargement, Like, Commentaire
+from interactions.serializers import (
+    LikeToggleSerializer,
+    CommentaireCreateSerializer,
+    CommentaireListSerializer,
+    TelechargementListSerializer,
+    LikeListSerializer,
+    SignalementCreateSerializer,
+    NotationCreateSerializer,
+    NotationListSerializer,
+    SignalementListSerializer,
+    LikeToggleSerializer,
+    TelechargementListSerializer,
+    TelechargementCreateSerializer,
+    LikeToggleSerializer,
+    LikeListSerializer,
+    CommentaireCreateSerializer,
+    CommentaireListSerializer,
+    NotationCreateSerializer,
+    NotationListSerializer,
+    SignalementCreateSerializer,
+    SignalementListSerializer,
+)
 
 
-class TelechargementViewSet(viewsets.ModelViewSet):
-    queryset = Telechargement.objects.all()
-    serializer_class = TelechargementSerializer
-    permission_classes = [permissions.IsAuthenticated]
+from memoires.models import Memoire, Notation, Signalement
+from interactions.permissions import IsAuthenticated, IsAdminOrModerateur
 
-    def get_queryset(self):
-        # Utilisateur standard : ne voit que ses téléchargements
-        if self.request.user.is_staff:
-            return self.queryset
-        return self.queryset.filter(utilisateur=self.request.user)
 
-    def create(self, request, *args, **kwargs):
-        memoire_id = request.data.get('memoire')
-        if not memoire_id:
-            return Response({'detail': 'mémoire requis'}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            memoire = Memoire.objects.get(pk=memoire_id)
-        except Memoire.DoesNotExist:
-            return Response({'detail': 'Mémoire introuvable'}, status=status.HTTP_404_NOT_FOUND)
+# --------------------------------------------------
+# 1. Téléchargement (tout user connecté)
+# --------------------------------------------------
+@extend_schema_view(
+    list=extend_schema(
+        summary="Mes téléchargements",
+        responses={200: TelechargementListSerializer(many=True)},
+    ),
+)
+class TelechargementOpenViewSet(viewsets.ViewSet):
+    permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        summary="Télécharger un mémoire",
+        request=TelechargementCreateSerializer,
+    )
+    @action(detail=False, methods=["post"], url_path="telecharger")
+    def telecharger(self, request):
+        memoire = get_object_or_404(Memoire, pk=request.data.get("memoire"))
         telechargement, created = Telechargement.objects.get_or_create(
             utilisateur=request.user,
             memoire=memoire,
             defaults={
-                'ip': request.META.get('REMOTE_ADDR'),
-                'user_agent': request.META.get('HTTP_USER_AGENT', '')[:500],
-            }
+                "ip": request.META.get("REMOTE_ADDR"),
+                "user_agent": request.META.get("HTTP_USER_AGENT", "")[:500],
+            },
         )
         if not created:
-            return Response({'detail': 'Déjà téléchargé'}, status=status.HTTP_200_OK)
+            return Response({"detail": "Déjà téléchargé"}, status=status.HTTP_200_OK)
+        return Response(
+            {
+                "detail": "Téléchargement enregistré",
+                "pdf_url": request.build_absolute_uri(memoire.fichier_pdf.url),
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
-        serializer = self.get_serializer(telechargement)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-    @action(detail=False, methods=['get'], url_path='mes-telechargements')
+    @extend_schema(responses={200: TelechargementListSerializer(many=True)})
+    @action(detail=False, methods=["get"], url_path="mes-telechargements")
     def mes_telechargements(self, request):
-        qs = self.get_queryset().select_related('memoire')
-        serializer = self.get_serializer(qs, many=True)
+        qs = Telechargement.objects.filter(utilisateur=request.user).select_related(
+            "memoire"
+        )
+        serializer = TelechargementListSerializer(qs, many=True)
         return Response(serializer.data)
 
-    @action(detail=False, methods=['get'], url_path='par-memoire/(?P<memoire_id>\d+)')
-    def par_memoire(self, request, memoire_id=None):
-        try:
-            memoire = Memoire.objects.get(pk=memoire_id)
-        except Memoire.DoesNotExist:
-            return Response({'detail': 'Mémoire introuvable'}, status=status.HTTP_404_NOT_FOUND)
 
-        if request.user != memoire.auteur and not request.user.is_staff:
-            return Response({'detail': 'Non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+# --------------------------------------------------
+# 2. Like (tout user connecté)
+# --------------------------------------------------
+class LikeOpenViewSet(viewsets.ViewSet):
+    permission_classes = [IsAuthenticated]
 
-        qs = self.queryset.filter(memoire=memoire).select_related('utilisateur')
-        serializer = self.get_serializer(qs, many=True)
-        return Response(serializer.data)
-class LikeViewSet(viewsets.ModelViewSet):
-    queryset = Like.objects.all()
-    serializer_class = LikeSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        if self.request.user.is_staff:
-            return self.queryset
-        return self.queryset.filter(utilisateur=self.request.user)
-
-    def create(self, request, *args, **kwargs):
-        memoire_id = request.data.get('memoire')
-        if not memoire_id:
-            return Response({'detail': 'mémoire requis'}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            memoire = Memoire.objects.get(pk=memoire_id)
-        except Memoire.DoesNotExist:
-            return Response({'detail': 'Mémoire introuvable'}, status=status.HTTP_404_NOT_FOUND)
-
+    @extend_schema(
+        summary="Liké / unliké un mémoire",
+        request=LikeToggleSerializer,
+    )  # ✅
+    @action(detail=False, methods=["post"], url_path="toggle")
+    def toggle(self, request):
+        ser = LikeToggleSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        memoire = get_object_or_404(Memoire, pk=ser.validated_data["memoire_id"])
         like, created = Like.objects.get_or_create(
-            utilisateur=request.user,
-            memoire=memoire
+            utilisateur=request.user, memoire=memoire
         )
         if not created:
-            return Response({'detail': 'Déjà liké'}, status=status.HTTP_200_OK)
+            like.delete()
+            return Response(
+                {"liked": False, "count": memoire.likes.count()},
+                status=status.HTTP_200_OK,
+            )
+        return Response(
+            {"liked": True, "count": memoire.likes.count()},
+            status=status.HTTP_201_CREATED,
+        )
 
-        serializer = self.get_serializer(like)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-    @action(detail=False, methods=['delete'], url_path='unlike/(?P<memoire_id>\d+)')
-    def unlike(self, request, memoire_id=None):
-        deleted, _ = Like.objects.filter(utilisateur=request.user, memoire_id=memoire_id).delete()
-        if deleted:
-            return Response(status=status.HTTP_204_NO_CONTENT)
-        return Response({'detail': 'Like non trouvé'}, status=status.HTTP_404_NOT_FOUND)    
-class CommentaireViewSet(viewsets.ModelViewSet):
-    queryset = Commentaire.objects.filter(modere=False)
-    serializer_class = CommentaireSerializer
-    permission_classes = [permissions.IsAuthenticated]
+# --------------------------------------------------
+# 3. Commentaires (tout user connecté)
+# --------------------------------------------------
+@extend_schema_view(
+    list=extend_schema(
+        summary="Commentaires publics",
+        responses={200: CommentaireListSerializer(many=True)},
+    ),
+    create=extend_schema(
+        summary="Publier un commentaire",
+        request=CommentaireCreateSerializer,
+        responses={201: CommentaireListSerializer},
+    ),
+)
+class CommentaireOpenViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
+
+    def get_serializer_class(self):
+        # ⭐ choisit le serializer adéquat
+        if self.action == "create":
+            return CommentaireCreateSerializer
+        return CommentaireListSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset()
-        if self.request.user.is_staff:
-            return Commentaire.objects.all()  # modérateur voit tout
-        memoire_id = self.request.query_params.get('memoire')
-        if memoire_id:
-            qs = qs.filter(memoire_id=memoire_id)
-        return qs
+        return (
+            Commentaire.objects.filter(modere=False)
+            .select_related("utilisateur")
+            .order_by("-date")
+        )
 
     def perform_create(self, serializer):
-        serializer.save(utilisateur=self.request.user)
+        # ⭐ on force l’utilisateur connecté + modere=False
+        serializer.save(utilisateur=self.request.user, modere=False)
 
-    @action(detail=True, methods=['patch'], url_path='moderer')
-    def moderer(self, request, pk=None):
-        if not request.user.is_staff:
-            return Response({'detail': 'Réservé aux modérateurs'}, status=status.HTTP_403_FORBIDDEN)
-        commentaire = self.get_object()
-        commentaire.modere = not commentaire.modere
-        commentaire.save()
-        return Response({'modere': commentaire.modere})    
-# interactions/views.py (ajout)
-from rest_framework.generics import GenericAPIView
+    @extend_schema(summary="Modérer un commentaire (staff ou modérateur)")
+    @action(detail=True, methods=["patch"], url_path="moderer")
+    def moderer(self, request, *args, **kwargs):
+        if not IsAdminOrModerateur().has_permission(request, self):
+            return Response(
+                {"detail": "Réservé aux modérateurs"}, status=status.HTTP_403_FORBIDDEN
+            )
+        com = self.get_object()
+        com.modere = not com.modere
+        com.save()
+        return Response({"modere": com.modere})
 
-class InteractionsGlobalStatsView(GenericAPIView):
+
+# --------------------------------------------------
+# 4. Notation (tout user connecté)
+# --------------------------------------------------
+class NotationViewSet(viewsets.ViewSet):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+    summary="Noter un mémoire",
+    request=NotationCreateSerializer,
+)
+    @action(detail=False, methods=["post"], url_path="noter")
+    def noter(self, request, ser):
+        memoire = get_object_or_404(Memoire, pk=ser.validated_data["memoire_id"])
+        notation, created = Notation.objects.get_or_create(
+            utilisateur=request.user,
+            memoire=memoire,
+            defaults={"note": ser.validated_data["note"]},
+        )
+
+        if not created:
+            notation.note = ser.validated_data["note"]
+            notation.save()
+            return Response(
+                {"detail": "Note mise à jour", "note": notation.note},
+                status=status.HTTP_200_OK,
+            )
+        return Response(
+            {"detail": "Note enregistrée", "note": notation.note},
+            status=status.HTTP_201_CREATED,
+        )
+    @extend_schema(
+    summary="Liste des notes d’un mémoire",
+    responses={200: NotationListSerializer(many=True)},
+)
+    @action(detail=False, methods=["get"], url_path="par-memoire/<int:memoire_id>")
+    def par_memoire(self, request, memoire_id):
+        memoire = get_object_or_404(Memoire, pk=memoire_id)
+        notations = Notation.objects.filter(memoire=memoire).select_related("utilisateur")
+        serializer = NotationListSerializer(notations, many=True)
+        return Response(serializer.data)
+
+    @extend_schema(
+        summary="Stats de notation d’un mémoire",
+    )
+    @action(detail=False, methods=["get"], url_path="stats/<int:memoire_id>")
+    def stats(self, request, *args, **kwargs):
+        memoire = get_object_or_404(Memoire, pk=kwargs["memoire_id"])
+        stats = Notation.objects.filter(memoire=memoire).aggregate(
+            avg_note=Avg("note"), count=Count("id")
+        )
+        return Response(
+            {
+                "memoire": memoire.titre,
+                "note_moyenne": round(stats["avg_note"] or 0, 2),
+                "total_notes": stats["count"],
+            }
+        )
+    def list(self, request):
+        notations = Notation.objects.all()  # You might want to filter by user or other criteria
+        serializer = NotationListSerializer(notations, many=True)  # Make sure to create this serializer
+        return Response(serializer.data)
+    def create(self, request):
+        ser = NotationCreateSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        print("Données validées :", ser.validated_data)  # Cela affichera les données validées
+        return self.noter(request, ser)
+# --------------------------------------------------
+# 5. Signalement (admin uniquement)
+# --------------------------------------------------
+class SignalementModerationViewSet(viewsets.ViewSet):
+    permission_classes = [
+        IsAuthenticated
+    ]  # ou IsAdminOfUniversite si tu veux restreindre
+
+    @extend_schema(
+        summary="Liste des signalements non traités",
+        responses={200: SignalementListSerializer(many=True)},
+    )
+    @action(detail=False, methods=["get"], url_path="signalements-en-attente")
+    def signalements_en_attente(self, request, *args, **kwargs):
+        qs = Signalement.objects.filter(
+            memoire__universites__slug=kwargs["univ_slug"], traite=False
+        ).select_related("utilisateur", "memoire")
+        serializer = SignalementListSerializer(qs, many=True)
+        return Response(serializer.data)
+
+    @extend_schema(
+        summary="Marquer un signalement comme traité",
+        responses={200: {"detail": "Signalement marqué comme traité"}},
+    )
+    @action(detail=True, methods=["patch"], url_path="marquer-traite/<int:pk>")
+    def marquer_traite(self, request, *args, **kwargs):
+        signalement = get_object_or_404(
+            Signalement, pk=kwargs["pk"], memoire__universites__slug=kwargs["univ_slug"]
+        )
+        signalement.traite = True
+        signalement.save()
+        return Response({"detail": "Signalement marqué comme traité."})
+
+
+# --------------------------------------------------
+# 1. Téléchargements
+# --------------------------------------------------
+class UniversiteTelechargementListView(generics.ListAPIView):
+    """
+    Liste des téléchargements des mémoires d’une université.
+    """
+
+    serializer_class = TelechargementListSerializer
     permission_classes = [permissions.AllowAny]
 
-    def get(self, request):
-        from interactions.models import Telechargement, Like, Commentaire
-        return Response({
-            "total_telechargements": Telechargement.objects.count(),
-            "total_likes": Like.objects.count(),
-            "total_commentaires": Commentaire.objects.filter(modere=False).count(),
-            "top_memoire_telecharge": (
-                Telechargement.objects.values('memoire__titre')
-                .annotate(nb=Count('id'))
-                .order_by('-nb')
-                .first()
-            ),
-            "top_memoire_like": (
-                Like.objects.values('memoire__titre')
-                .annotate(nb=Count('id'))
-                .order_by('-nb')
-                .first()
-            ),
-        })    
+    def get_queryset(self):
+        univ_slug = self.kwargs["univ_slug"]
+        return (
+            Telechargement.objects.filter(memoire__universites__slug=univ_slug)
+            .select_related("utilisateur", "memoire")
+            .order_by("-date")
+        )
+
+
+# --------------------------------------------------
+# 2. Likes
+# --------------------------------------------------
+class UniversiteLikeListView(generics.ListAPIView):
+    serializer_class = LikeListSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def get_queryset(self):
+        univ_slug = self.kwargs["univ_slug"]
+        return (
+            Like.objects.filter(memoire__universites__slug=univ_slug)
+            .select_related("utilisateur", "memoire")
+            .order_by("-date")
+        )
+
+
+# --------------------------------------------------
+# 3. Commentaires
+# --------------------------------------------------
+class UniversiteCommentaireListView(generics.ListAPIView):
+    serializer_class = CommentaireListSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def get_queryset(self):
+        univ_slug = self.kwargs["univ_slug"]
+        return (
+            Commentaire.objects.filter(memoire__universites__slug=univ_slug, modere=False)
+            .select_related("utilisateur")
+            .order_by("-date")
+        )
+
+
+# --------------------------------------------------
+# 4. Notations
+# --------------------------------------------------
+class UniversiteNotationListView(generics.ListAPIView):
+    serializer_class = NotationListSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def get_queryset(self):
+        univ_slug = self.kwargs["univ_slug"]
+        return (
+            Notation.objects.filter(memoire__universites__slug=univ_slug)
+            .select_related("utilisateur", "memoire")
+            .order_by("-created_at")
+        )
+
+
+# --------------------------------------------------
+# 5. Signalements (admin uniquement)
+# --------------------------------------------------
+class UniversiteSignalementListView(generics.ListAPIView):
+    serializer_class = SignalementListSerializer
+    permission_classes = [permissions.IsAuthenticated]  # on peut restreindre plus tard
+
+    def get_queryset(self):
+        univ_slug = self.kwargs["univ_slug"]
+        return (
+            Signalement.objects.filter(memoire__universites__slug=univ_slug)
+            .select_related("utilisateur", "memoire")
+            .order_by("-created_at")
+        )
+
+
+# --------------------------------------------------
+# 6. Stats globales interactions (tout public)
+# --------------------------------------------------
+class UniversiteInteractionsStatsView(generics.GenericAPIView):
+    permission_classes = [permissions.AllowAny]
+
+    @extend_schema(summary="Stats interactions d’une université")
+    def get(self, request, *args, **kwargs):
+        univ_slug = kwargs["univ_slug"]
+        memoires_qs = Memoire.objects.filter(universites__slug=univ_slug)
+
+        return Response(
+            {
+                "universite": univ_slug,
+                "total_telechargements": Telechargement.objects.filter(
+                    memoire__universites__slug=univ_slug
+                ).count(),
+                "total_likes": Like.objects.filter(
+                    memoire__universites__slug=univ_slug
+                ).count(),
+                "total_commentaires": Commentaire.objects.filter(
+                    memoire__universites__slug=univ_slug, modere=False
+                ).count(),
+                "total_notations": Notation.objects.filter(
+                    memoire__universites__slug=univ_slug
+                ).count(),
+                "note_moyenne": round(
+                    Notation.objects.filter(
+                        memoire__universites__slug=univ_slug
+                    ).aggregate(avg=Avg("note"))["avg"]
+                    or 0,
+                    2,
+                ),
+                "total_signalements": Signalement.objects.filter(
+                    memoire__universites__slug=univ_slug
+                ).count(),
+                "top_memoires_telecharges": list(
+                    memoires_qs.annotate(dl=Count("telechargements"))
+                    .order_by("-dl")
+                    .values("id", "titre", "dl")[:5]
+                ),
+                "top_memoires_notes": list(
+                    memoires_qs.annotate(avg_note=Avg("notations__note"))
+                    .order_by("-avg_note")
+                    .values("id", "titre", "avg_note")[:5]
+                ),
+            }
+        )

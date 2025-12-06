@@ -54,7 +54,7 @@ urlpatterns = [
     path("users/<int:pk>/role/", RoleUpdateView.as_view(), name="user-role-update"),
     path("users/deactivate/", DeactivateAccountView.as_view(), name="user-deactivate"),
     path(
-        "auth/<slug:univ_slug>/register/",
+        "<slug:univ_slug>/register/",
         RegisterViaUniversiteView.as_view(),
         name="register_via_univ",
     ),

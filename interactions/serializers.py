@@ -1,33 +1,81 @@
+# These classes define serializers for various interactions and actions related to user interactions
+# with memories in a Django REST framework application.
 from rest_framework import serializers
-from .models import Telechargement, Like, Commentaire
-from memoires.models import Memoire
-from users.models import CustomUser
+from interactions.models import Telechargement, Like, Commentaire
+from memoires.models import Notation, Signalement
 
-
-class TelechargementSerializer(serializers.ModelSerializer):
-    utilisateur_email = serializers.CharField(source='utilisateur.email', read_only=True)
+# ---------- LISTE ----------
+class TelechargementListSerializer(serializers.ModelSerializer):
+    utilisateur_nom = serializers.CharField(source='utilisateur.get_full_name', read_only=True)
     memoire_titre = serializers.CharField(source='memoire.titre', read_only=True)
 
     class Meta:
         model = Telechargement
-        fields = ['id', 'utilisateur', 'utilisateur_email', 'memoire', 'memoire_titre', 'date', 'ip', 'user_agent']
-        read_only_fields = ['date', 'ip', 'user_agent']
+        fields = ['id', 'utilisateur', 'utilisateur_nom', 'memoire', 'memoire_titre', 'date']
 
 
-class LikeSerializer(serializers.ModelSerializer):
-    utilisateur_email = serializers.CharField(source='utilisateur.email', read_only=True)
+class LikeListSerializer(serializers.ModelSerializer):
+    utilisateur_nom = serializers.CharField(source='utilisateur.get_full_name', read_only=True)
+    memoire_titre = serializers.CharField(source='memoire.titre', read_only=True)
 
     class Meta:
         model = Like
-        fields = ['id', 'utilisateur', 'utilisateur_email', 'memoire', 'date']
-        read_only_fields = ['date']
+        fields = ['id', 'utilisateur', 'utilisateur_nom', 'memoire', 'memoire_titre', 'date']
 
 
-class CommentaireSerializer(serializers.ModelSerializer):
+class CommentaireListSerializer(serializers.ModelSerializer):
     utilisateur_nom = serializers.CharField(source='utilisateur.get_full_name', read_only=True)
-    modere = serializers.BooleanField(read_only=True)  # Seul un modérateur peut modérer
-
+    modere = serializers.BooleanField(read_only=True)
     class Meta:
         model = Commentaire
-        fields = ['id', 'utilisateur', 'utilisateur_nom', 'memoire', 'contenu', 'date', 'modere']
-        read_only_fields = ['date']
+        fields = ['id', 'utilisateur', 'utilisateur_nom', 'contenu', 'date', 'modere']
+
+
+class NotationListSerializer(serializers.ModelSerializer):
+    utilisateur_nom = serializers.CharField(source='utilisateur.get_full_name', read_only=True)
+
+    class Meta:
+        model = Notation
+        fields = ['id', 'utilisateur', 'utilisateur_nom', 'memoire', 'note', 'created_at']
+
+
+class SignalementListSerializer(serializers.ModelSerializer):
+    utilisateur_nom = serializers.CharField(source='utilisateur.get_full_name', read_only=True)
+    memoire_titre = serializers.CharField(source='memoire.titre', read_only=True)
+    traite = serializers.BooleanField(read_only=True)
+    class Meta:
+        model = Signalement
+        fields = ['id', 'utilisateur', 'utilisateur_nom', 'memoire', 'memoire_titre', 'motif', 'commentaire', 'traite', 'created_at']
+
+
+# ---------- ACTIONS (body) ----------
+class TelechargementCreateSerializer(serializers.Serializer):
+    memoire = serializers.IntegerField(help_text="ID du mémoire à télécharger")
+
+
+class LikeToggleSerializer(serializers.Serializer):
+    memoire_id = serializers.IntegerField(help_text="ID du mémoire à liker")
+
+
+# interactions/serializers.py
+class CommentaireCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Commentaire
+        fields = ['memoire', 'contenu']   # seuls champs attendus côté front
+
+class NotationCreateSerializer(serializers.ModelSerializer):
+    memoire_id = serializers.IntegerField()  # Vérifiez que c'est bien déclaré ici
+
+    class Meta:
+        model = Notation
+        fields = ['memoire_id', 'note']
+
+    def validate_note(self, value):
+        if value < 1 or value > 5:
+            raise serializers.ValidationError("La note doit être entre 1 et 5.")
+        return value
+
+class SignalementCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Signalement
+        fields = ['memoire', 'motif', 'commentaire']

@@ -631,8 +631,7 @@ class UniversiteUsersExportCSVView(generics.GenericAPIView):
 
 
 class UniversiteTopContribView(generics.GenericAPIView):
-    permission_classes = [permissions.IsAuthenticated]
-
+    permission_classes =[permissions.AllowAny]
     def get(self, request, *args, **kwargs):
         from interactions.models import Telechargement
 
