@@ -226,7 +226,7 @@ CORS_ALLOW_HEADERS = [
 ]
 
 CORS_ALLOWED_ORIGINS = [
-    "https://memocloudbackend.onrender.com"
+    "https://memocloudbackend.onrender.com",
     "https://memocloudfront.vercel.app",
     "https://camsecplots.netlify.app",
     "http://127.0.0.1:5500",
