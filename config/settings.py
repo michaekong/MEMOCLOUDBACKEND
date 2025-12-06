@@ -18,9 +18,11 @@ SECRET_KEY = config('SECRET_KEY')
 DEBUG = True
 
 ALLOWED_HOSTS = [
-    "camsecureplot.reimca-app.com",
+   
+    "memocloudbackend.onrender.com",
     "frontcamsec.vercel.app",
     "127.0.0.1",
+    "memocloudfront.vercel.app",
     "camsecplots.netlify.app",
 ]
 
