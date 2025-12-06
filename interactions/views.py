@@ -165,33 +165,42 @@ class NotationViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-    summary="Noter un mémoire",
-    request=NotationCreateSerializer,
-)
+        summary="Noter un mémoire",
+        request=NotationCreateSerializer,
+    )
     @action(detail=False, methods=["post"], url_path="noter")
     def noter(self, request, ser):
         memoire = get_object_or_404(Memoire, pk=ser.validated_data["memoire_id"])
-        notation, created = Notation.objects.get_or_create(
-            utilisateur=request.user,
-            memoire=memoire,
-            defaults={"note": ser.validated_data["note"]},
-        )
 
-        if not created:
+        # Tentez de récupérer l'annotation existante
+        notation = Notation.objects.filter(
+            utilisateur=request.user, memoire=memoire
+        ).first()
+
+        if notation:
+            # Si la notation existe, mettez à jour la note
             notation.note = ser.validated_data["note"]
             notation.save()
             return Response(
                 {"detail": "Note mise à jour", "note": notation.note},
                 status=status.HTTP_200_OK,
             )
-        return Response(
-            {"detail": "Note enregistrée", "note": notation.note},
-            status=status.HTTP_201_CREATED,
-        )
+        else:
+            # Si la notation n'existe pas, créez-en une nouvelle
+            notation = Notation.objects.create(
+                utilisateur=request.user,
+                memoire=memoire,
+                note=ser.validated_data["note"],
+            )
+            return Response(
+                {"detail": "Note enregistrée", "note": notation.note},
+                status=status.HTTP_201_CREATED,
+            )
+
     @extend_schema(
-    summary="Liste des notes d’un mémoire",
-    responses={200: NotationListSerializer(many=True)},
-)
+        summary="Liste des notes d’un mémoire",
+        responses={200: NotationListSerializer(many=True)},
+    )
     @action(detail=False, methods=["get"], url_path="par-memoire/<int:memoire_id>")
     def par_memoire(self, request, memoire_id):
         memoire = get_object_or_404(Memoire, pk=memoire_id)
@@ -215,15 +224,25 @@ class NotationViewSet(viewsets.ViewSet):
                 "total_notes": stats["count"],
             }
         )
+
     def list(self, request):
-        notations = Notation.objects.all()  # You might want to filter by user or other criteria
-        serializer = NotationListSerializer(notations, many=True)  # Make sure to create this serializer
+        notations = (
+            Notation.objects.all()
+        )  # Vous pourriez souhaiter filtrer par utilisateur ou autres critères
+        serializer = NotationListSerializer(
+            notations, many=True
+        )  # Assurez-vous de créer ce serializer
         return Response(serializer.data)
+
     def create(self, request):
         ser = NotationCreateSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
-        print("Données validées :", ser.validated_data)  # Cela affichera les données validées
+        print(
+            "Données validées :", ser.validated_data
+        )  # Cela affichera les données validées
         return self.noter(request, ser)
+
+
 # --------------------------------------------------
 # 5. Signalement (admin uniquement)
 # --------------------------------------------------
@@ -356,6 +375,9 @@ class UniversiteInteractionsStatsView(generics.GenericAPIView):
         return Response(
             {
                 "universite": univ_slug,
+                "total_memoires":Memoire.objects.filter(
+                    universites__slug=univ_slug
+                ).count(),
                 "total_telechargements": Telechargement.objects.filter(
                     memoire__universites__slug=univ_slug
                 ).count(),

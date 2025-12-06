@@ -1,6 +1,7 @@
 # These classes define serializers for various interactions and actions related to user interactions
 # with memories in a Django REST framework application.
 from rest_framework import serializers
+from users.models import  CustomUser
 from interactions.models import Telechargement, Like, Commentaire
 from memoires.models import Notation, Signalement
 
@@ -23,13 +24,22 @@ class LikeListSerializer(serializers.ModelSerializer):
         fields = ['id', 'utilisateur', 'utilisateur_nom', 'memoire', 'memoire_titre', 'date']
 
 
+from rest_framework import serializers
+from .models import Commentaire
+
+class UtilisateurSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CustomUser  # Assurez-vous d'importer votre modèle CustomUser
+        fields = ['nom', 'prenom', 'sexe', 'email', 'type', 'photo_profil','realisation_linkedin']
+
 class CommentaireListSerializer(serializers.ModelSerializer):
-    utilisateur_nom = serializers.CharField(source='utilisateur.get_full_name', read_only=True)
+    utilisateur = UtilisateurSerializer(read_only=True)  # Utilisateur représenté comme un objet
+
     modere = serializers.BooleanField(read_only=True)
+
     class Meta:
         model = Commentaire
-        fields = ['id', 'utilisateur', 'utilisateur_nom', 'contenu', 'date', 'modere']
-
+        fields = ['id', 'utilisateur', 'contenu', 'date', 'modere']
 
 class NotationListSerializer(serializers.ModelSerializer):
     utilisateur_nom = serializers.CharField(source='utilisateur.get_full_name', read_only=True)
