@@ -21,8 +21,24 @@ from universites.permissions import (
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
+from rest_framework import generics, permissions, pagination
+from interactions.models import Commentaire
+from memoires.serializers import CommentaireSerializer
+class CommentaireListView(generics.ListAPIView):
+    """
+    GET /api/universites/<univ_slug>/memoires/<memoire_id>/commentaires/
+    Renvoie la liste des commentaires d’un mémoire (non modérés).
+    """
+    serializer_class = CommentaireSerializer
+    permission_classes = [permissions.AllowAny]   # lecture publique
+    pagination_class = pagination.PageNumberPagination   # optionnel
 
-
+    def get_queryset(self):
+        memoire_id = self.kwargs["memoire_id"]
+        # on exclut les commentaires masqués (modération)
+        return Commentaire.objects.filter(
+            memoire_id=memoire_id, modere=False
+        ).select_related("utilisateur").order_by("-date")
 @extend_schema_view(
     list=extend_schema(summary="Liste des mémoires de l’université"),
     retrieve=extend_schema(summary="Détail d’un mémoire"),

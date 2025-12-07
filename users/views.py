@@ -127,7 +127,16 @@ class VerifyEmailView(GenericAPIView):
         logger.info(f"Email verified for user {user.email}")
         return Response({"detail": "Email verified. You can now log in."})
 
+class CurrentUserView(generics.RetrieveAPIView):
+    """
+    GET /api/auth/me/
+    Renvoie l’utilisateur connecté à partir du JWT.
+    """
+    serializer_class = UserSerializer
+    permission_classes = [permissions.IsAuthenticated]
 
+    def get_object(self):
+        return self.request.user
 # -------------------- Connexion (JWT) + anti-brute --------------------
 @method_decorator(vary_on_cookie, name="dispatch")
 class LoginView(GenericAPIView):

@@ -6,6 +6,7 @@ from .views import (
     MemoireAnneesView,
     MemoireEncadrementView,
     AuteurDashboardView,
+    CommentaireListView,
     MemoirePreviewImageView,
 )
 
@@ -19,4 +20,9 @@ urlpatterns = [
     path('universites/<slug:univ_slug>/memoires/<int:pk>/preview/image/', MemoirePreviewImageView.as_view(), name='memoire-preview-image'),
     path('universites/<slug:univ_slug>/memoires/<int:pk>/encadrer/', MemoireEncadrementView.as_view(), name='memoire-encadrement'),
     path('universites/<slug:univ_slug>/', include(router.urls)),
+    path(
+        "universites/<str:univ_slug>/memoires/<int:memoire_id>/commentaires/",
+        CommentaireListView.as_view(),
+        name="commentaire-list",
+    ),
    ]

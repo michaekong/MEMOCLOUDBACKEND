@@ -24,6 +24,7 @@ from .views import (
     UniversiteTopContribView,
     UniversiteUserSearchView,
     UniversiteAnnuaireView,
+    CurrentUserView,
     UniversiteUsersStatsView,
     UniversiteBulkCodesView,
     UserProfileView,
@@ -128,4 +129,5 @@ urlpatterns = [
         UniversiteBulkCodesView.as_view(),
         name="univ-bulk-codes",
     ),
+    path('me/', CurrentUserView.as_view(), name='current-user'),
 ]
