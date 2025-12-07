@@ -119,9 +119,11 @@ class MemoireUniversiteListSerializer(serializers.ModelSerializer):
         return [kw.strip() for kw in obj.keywords.split(',')] if obj.keywords else []
 
     def get_fichier_taille(self, obj):
-        # taille en Mo, arrondie
-        if obj.fichier_pdf and obj.fichier_pdf.size:
-            return round(obj.fichier_pdf.size / 1024 / 1024, 2)
+        try:
+            if obj.fichier_pdf and obj.fichier_pdf.name and obj.fichier_pdf.size:
+                return round(obj.fichier_pdf.size / 1024 / 1024, 2)  # Mo
+        except (FileNotFoundError, OSError):
+            pass
         return None
     def get_pdf_url(self, obj):
         request = self.context.get('request')
