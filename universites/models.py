@@ -98,3 +98,34 @@ class RoleUniversite(models.Model):
 
     def __str__(self):
         return f"{self.utilisateur} – {self.universite} ({self.role})"
+# news/models.py
+class NewsTopic(models.TextChoices):
+    GENERAL  = 'general', 'Général'
+    EVENT    = 'event', 'Événement'
+    AWARD    = 'award', 'Récompense'
+    RESEARCH = 'research', 'Recherche'
+    ALUMNI   = 'alumni', 'Alumni'
+class News(models.Model):
+    title = models.CharField(max_length=200)
+    slug = models.SlugField(unique=True, blank=True)
+    headline = models.TextField(blank=True)
+    body = models.TextField()
+    cover = models.ImageField(upload_to='news_covers/', blank=True, null=True)
+    topics = models.CharField(max_length=50, default='general')
+    is_published = models.BooleanField(default=True)
+    publish_at = models.DateTimeField()
+    publisher = models.ForeignKey('universites.Universite', on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def save(self, *args, **kwargs):
+        # ✅ Auto-génération du slug si vide
+        if not self.slug:
+            self.slug = slugify(self.title)
+            # Gestion des doublons
+            original_slug = self.slug
+            counter = 1
+            while News.objects.filter(slug=self.slug).exists():
+                self.slug = f"{original_slug}-{counter}"
+                counter += 1
+        super().save(*args, **kwargs)

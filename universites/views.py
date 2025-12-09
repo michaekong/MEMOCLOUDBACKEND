@@ -8,10 +8,12 @@ from django.utils.text import slugify
 from rest_framework import viewsets, permissions, filters, generics, status
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
-from .models import Universite, Domaine, RoleUniversite
+from .models import Universite, Domaine, RoleUniversite,News
 from .serializers import (
     UniversiteSerializer,
     DomaineSerializer,
+    UserRoleSerializer,
+    NewsSerializer,
     RoleUniversiteSerializer,
 )
 from django.core.mail import send_mail, EmailMessage
@@ -345,4 +347,93 @@ class DomaineCreateInUniversiteView(generics.CreateAPIView):
             slug = f"{slugify(nom)}-{counter}"
             counter += 1
         domaine = serializer.save(slug=slug)
-        domaine.universites.add(univ)   # rattachement immédiat        
+        domaine.universites.add(univ)   # rattachement immédiat 
+
+
+class UserRoleInUniversityView(generics.RetrieveAPIView):
+    """
+    GET /api/auth/<univ_slug>/my-role/
+    Renvoie le rôle de l'utilisateur connecté dans l'université <univ_slug>.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = UserRoleSerializer
+
+    def get_object(self):
+        user = self.request.user
+        univ = get_object_or_404(Universite, slug=self.kwargs["univ_slug"])
+        return get_object_or_404(RoleUniversite, utilisateur=user, universite=univ)
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+class UserRoleInUniversityByIdView(generics.RetrieveAPIView):
+    """
+    GET /api/auth/universities/<univ_slug>/user-role/<user_id>/
+    Renvoie le rôle de l'utilisateur avec <user_id> dans l'université <univ_slug>.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = UserRoleSerializer
+
+    def get_object(self):
+        univ_slug = self.kwargs["univ_slug"]
+        user_id = self.kwargs["user_id"]
+        univ = get_object_or_404(Universite, slug=univ_slug)
+        return get_object_or_404(RoleUniversite, utilisateur_id=user_id, universite=univ)
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)        
+class NewsBySlugViewSet(viewsets.ModelViewSet):
+    """CRUD complet filtré sur l’université (slug)"""
+    serializer_class = NewsSerializer
+
+    def get_university(self):
+        return get_object_or_404(Universite, slug=self.kwargs['slug'])
+
+    def get_queryset(self):
+        return News.objects.filter(publisher=self.get_university())
+
+    def perform_create(self, serializer):
+        # on lie automatiquement au slug de l’URL
+        serializer.save(publisher=self.get_university())
+    from rest_framework.decorators import action    
+    @action(detail=True, methods=['delete'], url_path='dissociate')
+    def dissociate(self, request, slug=None, pk=None):
+        """
+        Retire l'université 'slug' de la news.
+        Si c'était la dernière → suppression complète.
+        """
+        university = self.get_university()          # slug de l'URL
+        news = self.get_object()                    # pk de l'URL
+
+        # 1. on retire l’université (relation M-N)
+        news.universities.remove(university)
+
+        # 2. s’il ne reste plus aucune université → on supprime la news
+        if not news.universities.exists():
+            news.delete()
+            return Response({'detail': 'News supprimée (dernière université).'},
+                            status=status.HTTP_204_NO_CONTENT)
+
+        return Response({'detail': 'Université retirée.'},
+                        status=status.HTTP_200_OK)    
+
+
+class NewsGlobalViewSet(viewsets.ModelViewSet):
+    """CRUD global – on précise l’université dans le payload"""
+    queryset = News.objects.all()
+    serializer_class = NewsSerializer
+
+    def create(self, request, *args, **kwargs):
+        # on attend publisher (id ou slug) dans le payload
+        univ_slug = request.data.get('publisher')
+        if not univ_slug:
+            return Response({'publisher': 'Ce champ est obligatoire.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        university = get_object_or_404(Universite, slug=univ_slug)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(publisher=university)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)    

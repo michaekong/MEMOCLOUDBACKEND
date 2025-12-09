@@ -25,12 +25,13 @@ from rest_framework import generics, status, permissions, filters, viewsets
 from rest_framework.generics import GenericAPIView
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
-
+from memoires.models import Memoire
 from .serializers import (
     RegisterSerializer,
     UserSerializer,
     LoginSerializer,
     ChangePasswordSerializer,
+    RegisterViaUniversiteSerializer2,
     ResetPasswordRequestSerializer,
     InviteUserSerializer,
     JoinWithCodeSerializer,
@@ -413,6 +414,9 @@ class UniversiteUsersListView(generics.ListAPIView):
 
     def get_queryset(self):
         univ = get_object_or_404(Universite, slug=self.kwargs["univ_slug"])
+        users=User.objects.filter(roles_univ__universite=univ).distinct()
+        for el in users :
+            print(el.email)
         return User.objects.filter(roles_univ__universite=univ).distinct()
 
 
@@ -688,9 +692,7 @@ from dateutil.relativedelta import relativedelta
 
 
 class UniversiteUsersStatsView(generics.GenericAPIView):
-    permission_classes = [
-        IsAdminInUniversite
-    ]  # ou [permissions.IsAuthenticated] si tu veux plus souple
+    permission_classes =  [permissions.AllowAny] 
 
     def get(self, request, *args, **kwargs):
         univ = get_object_or_404(Universite, slug=kwargs["univ_slug"])
@@ -718,6 +720,7 @@ class UniversiteUsersStatsView(generics.GenericAPIView):
         members = User.objects.filter(roles_univ__universite=univ).distinct()
         active_count = members.filter(is_active=True).count()
         inactive_count = members.filter(is_active=False).count()
+        memoires=Memoire.objects.filter(universites=univ).distinct()
 
         return Response(
             {
@@ -725,6 +728,7 @@ class UniversiteUsersStatsView(generics.GenericAPIView):
                 "total_membres": members.count(),
                 "actif": active_count,
                 "inactif": inactive_count,
+                "total_memoires": memoires.count(),
                 "repartition_roles": {r["role"]: r["total"] for r in role_counts},
                 "evolution_mensuelle": list(
                     reversed(monthly)
@@ -776,3 +780,50 @@ class UniversiteBulkCodesView(generics.CreateAPIView):
             },
             status=status.HTTP_201_CREATED,
         )
+class RegisterViaUniversiteView(generics.CreateAPIView):
+    serializer_class = RegisterViaUniversiteSerializer2
+    permission_classes = [permissions.AllowAny]
+
+    def perform_create(self, serializer):
+        user = serializer.save()
+        token = make_email_token(user.id)
+        verify_url = f"{settings.FRONTEND_URL}/verify-email/?token={token}"
+
+        html_content = render_to_string("emails/verify_email.html", {"verification_url": verify_url})
+        email = EmailMessage(
+            subject="Vérifiez votre adresse email",
+            body=html_content,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[user.email],
+        )
+        email.content_subtype = "html"
+        email.send(fail_silently=False)
+
+
+class UpdateRoleView(generics.UpdateAPIView):
+    """
+    PATCH /api/auth/<slug:univ_slug>/users/<int:pk>/role/
+    Modifie uniquement le rôle d’un utilisateur dans l’université.
+    """
+    serializer_class = serializers.Serializer   # on n’a pas besoin de serializer compliqué
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = 'pk'
+    queryset = User.objects.all()
+
+    def patch(self, request, *args, **kwargs):
+        user = self.get_object()
+        new_role = request.data.get('role')
+
+        if new_role not in dict(RoleUniversite.ROLE_CHOICES):
+            return Response({'detail': 'Rôle invalide.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        role_obj, created = RoleUniversite.objects.get_or_create(
+            utilisateur=user,
+            universite__slug=kwargs['univ_slug'],
+            defaults={'role': new_role, 'universite_id': kwargs['univ_slug']}
+        )
+        if not created:
+            role_obj.role = new_role
+            role_obj.save()
+
+        return Response({'detail': 'Rôle mis à jour.'}, status=status.HTTP_200_OK)

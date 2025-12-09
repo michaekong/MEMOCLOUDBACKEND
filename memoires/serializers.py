@@ -46,6 +46,7 @@ class MemoireUniversiteListSerializer(serializers.ModelSerializer):
     commentaires_list    = serializers.SerializerMethodField()
     notations_list       = serializers.SerializerMethodField()
     telechargements_list = serializers.SerializerMethodField()
+   
 
     # ------------------------------------------------------------------
     #  NOUVEAUX CHAMPS  (ceux "de droite" qui manquaient sur mobile)
@@ -192,4 +193,6 @@ class MemoireUniversiteStatsSerializer(serializers.Serializer):
     total_memoires = serializers.IntegerField()
     total_telechargements = serializers.IntegerField()
     note_moyenne = serializers.FloatField()
+    total_likes = serializers.IntegerField()  # Ajout
+    total_commentaires = serializers.IntegerField()  # Ajout
     top_domaines = serializers.ListField(child=serializers.DictField())

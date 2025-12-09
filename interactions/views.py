@@ -144,6 +144,12 @@ class CommentaireOpenViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         # ⭐ on force l’utilisateur connecté + modere=False
         serializer.save(utilisateur=self.request.user, modere=False)
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        print('[BACK] Serialisé :', serializer.data[:2])  # ← on log
+        return Response(serializer.data)    
+    
 
     @extend_schema(summary="Modérer un commentaire (staff ou modérateur)")
     @action(detail=True, methods=["patch"], url_path="moderer")
@@ -157,7 +163,27 @@ class CommentaireOpenViewSet(viewsets.ModelViewSet):
         com.save()
         return Response({"modere": com.modere})
 
+from rest_framework import serializers
 
+# serializers.py
+from rest_framework import serializers
+
+class CommentaireListSerializer(serializers.ModelSerializer):
+    # ⭐ on override le champ pour forcer l’objet complet
+    utilisateur = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Commentaire
+        fields = ['id', 'utilisateur', 'contenu', 'date', 'modere']
+
+    def get_utilisateur(self, obj):
+        user = obj.utilisateur
+        return {
+            'id': user.id,
+            'nom': user.nom,
+            'prenom': user.prenom,
+            'photo_profil': str(user.photo_profil) if user.photo_profil else None,
+        }
 # --------------------------------------------------
 # 4. Notation (tout user connecté)
 # --------------------------------------------------

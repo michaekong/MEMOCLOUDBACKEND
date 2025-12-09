@@ -36,10 +36,14 @@ class UserSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         rep = super().to_representation(instance)
-        # Masquer l'email aux autres utilisateurs (RGPD)
         request = self.context.get("request")
         if request and request.user != instance:
-            rep.pop("email", None)
+            # garder l'email visible aux membres de la même université
+            same_univ = instance.roles_univ.filter(
+                universite__slug=request.user.role_univ.first().universite.slug
+            ).exists()
+            if not same_univ:
+                rep.pop("email", None)
         return rep
 
 
@@ -282,3 +286,33 @@ class ResetPasswordConfirmSerializer(serializers.Serializer):
                 {"new_password2": "Les mots de passe ne correspondent pas."}
             )
         return attrs
+
+# dans la même app que UserSerializer
+class RegisterViaUniversiteSerializer2(RegisterSerializer):
+    universite_slug = serializers.SlugField(write_only=True)
+    role            = serializers.ChoiceField(choices=RoleUniversite.ROLE_CHOICES, default="standard")
+    photo_profil    = serializers.ImageField(required=False, write_only=True)   # <-- nouveau
+
+    class Meta(RegisterSerializer.Meta):
+        fields = list(RegisterSerializer.Meta.fields) + [
+            "universite_slug", "role", "photo_profil"
+        ]
+
+    def create(self, validated_data):
+        univ_slug = validated_data.pop("universite_slug")
+        role      = validated_data.pop("role")
+        photo     = validated_data.pop("photo_profil", None)   # <-- récupération
+
+        # 1. création user
+        user = super().create(validated_data)
+
+        # 2. rôle universitaire
+        universite = Universite.objects.get(slug=univ_slug)
+        RoleUniversite.objects.create(utilisateur=user, universite=universite, role=role)
+
+        # 3. photo si fournie
+        if photo:
+            user.photo_profil = photo
+            user.save(update_fields=["photo_profil"])
+
+        return user

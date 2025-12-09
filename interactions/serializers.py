@@ -30,7 +30,7 @@ from .models import Commentaire
 class UtilisateurSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser  # Assurez-vous d'importer votre modèle CustomUser
-        fields = ['nom', 'prenom', 'sexe', 'email', 'type', 'photo_profil','realisation_linkedin']
+        fields = ['id','nom', 'prenom', 'sexe', 'email', 'type', 'photo_profil','realisation_linkedin']
 
 class CommentaireListSerializer(serializers.ModelSerializer):
     utilisateur = UtilisateurSerializer(read_only=True)  # Utilisateur représenté comme un objet

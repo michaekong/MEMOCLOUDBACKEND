@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import Universite, Domaine, RoleUniversite
+from .models import Universite, Domaine, RoleUniversite ,News
 
 
 @admin.register(Universite)
@@ -41,3 +41,16 @@ class RoleUniversiteAdmin(admin.ModelAdmin):
     search_fields = ('utilisateur__email', 'utilisateur__nom', 'universite__nom')
     raw_id_fields = ('utilisateur', 'universite')
     ordering = ('-created_at',)
+@admin.register(News)
+class NewsAdmin(admin.ModelAdmin):
+    # Affichage liste
+    list_display = ('title', 'publisher', 'topics', 'is_published', 'publish_at', 'created_at')
+    list_filter  = ('topics', 'is_published', 'created_at')
+    search_fields = ('title', 'headline', 'body')
+
+    date_hierarchy = 'publish_at'
+    ordering = ['-publish_at']
+
+  
+
+  

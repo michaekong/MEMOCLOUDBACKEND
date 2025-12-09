@@ -3,6 +3,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     RegisterView,
+    UpdateRoleView,
     VerifyEmailView,
     LoginView,
     ProfileView,
@@ -130,4 +131,8 @@ urlpatterns = [
         name="univ-bulk-codes",
     ),
     path('me/', CurrentUserView.as_view(), name='current-user'),
+    path('register-via-universite/', RegisterViaUniversiteView.as_view(), name='register-via-univ'),
+
+    # modification rôle (déjà présent chez vous, on le remplace ou on ajoute)
+    path('auth/<slug:univ_slug>/users/<int:pk>/role/', UpdateRoleView.as_view(), name='update-user-role'),
 ]

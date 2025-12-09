@@ -93,17 +93,28 @@ class UniversiteMemoireViewSet(viewsets.ModelViewSet):
     )
     @action(detail=False, methods=["get"], url_path="stats")
     def stats(self, request, **kwargs):
+            
         univ = self.get_universite()
         qs = self.get_queryset()
+        
+        # Calcul des statistiques
+        total_memoires = qs.count()
+        total_telechargements = sum(m.nb_telechargements() for m in qs)
+        note_moyenne = round(qs.aggregate(avg=Avg("notations__note"))["avg"] or 0, 2)
+        
+        # Total de likes et de commentaires
+        total_likes = sum(m.likes.count() for m in qs)
+        total_commentaires = sum(m.commentaires.count() for m in qs)
+
         return Response(
             MemoireUniversiteStatsSerializer(
                 {
-                    "universite": univ.nom,
-                    "total_memoires": qs.count(),
-                    "total_telechargements": sum(m.nb_telechargements() for m in qs),
-                    "note_moyenne": round(
-                        qs.aggregate(avg=Avg("notations__note"))["avg"] or 0, 2
-                    ),
+                    "universite": univ.slug,
+                    "total_memoires": total_memoires,
+                    "total_telechargements": total_telechargements,
+                    "note_moyenne": note_moyenne,
+                    "total_likes": total_likes,  # Ajout du total des likes
+                    "total_commentaires": total_commentaires,  # Ajout du total des commentaires
                     "top_domaines": list(
                         qs.values("domaines__nom")
                         .annotate(nb=Count("id"))
@@ -112,7 +123,6 @@ class UniversiteMemoireViewSet(viewsets.ModelViewSet):
                 }
             ).data
         )
-
 
 class MemoireAnneesView(generics.GenericAPIView):
     permission_classes = [permissions.AllowAny]
