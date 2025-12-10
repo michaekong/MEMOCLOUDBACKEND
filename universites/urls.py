@@ -20,6 +20,7 @@ from .views import (
     DomaineDestroyInUniversiteView,
     DomaineByUniversiteListView,
     UserRoleInUniversityView,
+    OldStudentBySlugViewSet,
 )
 
 # ----------  Routes manuelles pour News par SLUG  ----------
@@ -33,7 +34,16 @@ news_by_slug_detail = NewsBySlugViewSet.as_view({
     'patch': 'partial_update',
     'delete': 'destroy'
 })
-
+oldstudent_by_slug_list = OldStudentBySlugViewSet.as_view({
+    'get': 'list',
+    'post': 'create'
+})
+oldstudent_by_slug_detail = OldStudentBySlugViewSet.as_view({
+    'get': 'retrieve',
+    'put': 'update',
+    'patch': 'partial_update',
+    'delete': 'destroy'
+})
 # ----------  Router pour les routes globales (sans slug)  ----------
 router = DefaultRouter()
 router.register(r"universites", UniversiteViewSet, basename="universite")
@@ -47,6 +57,9 @@ urlpatterns = [
     # 1. Routes manuelles (prioritaires) : CRUD news par université
     path('universities/<slug:slug>/news/', news_by_slug_list, name='news-by-slug-list'),
     path('universities/<slug:slug>/news/<int:pk>/', news_by_slug_detail, name='news-by-slug-detail'),
+    path('universities/<slug:slug>/oldstudent/', oldstudent_by_slug_list, name='oldstudent-by-slug-list'),
+    path('universities/<slug:slug>/oldsdent/<int:pk>/', oldstudent_by_slug_detail, name='oldstudent-by-slug-detail'),
+
 
     # 2. Routes globales (via router)
     path("", include(router.urls)),

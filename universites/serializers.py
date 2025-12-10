@@ -179,3 +179,25 @@ class NewsSerializer(serializers.ModelSerializer):
         if 'publisher' not in validated_data:
             validated_data['publisher'] = self.context['request'].user.roles_universite.first().universite
         return super().create(validated_data)
+class OldStudentSerializer(serializers.ModelSerializer):
+    cover_url = serializers.SerializerMethodField()
+    publisher_slug = serializers.CharField(source='publisher.slug', read_only=True)
+    
+    class Meta:
+        model = News
+        fields = ['id', 'title', 'body', 'cover',
+                  'cover_url', 
+                  'created_at', 'publisher_slug']
+        read_only_fields = ('id',  'created_at', 'updated_at')  # ✅ slug en read-only
+        
+    def get_cover_url(self, obj):
+        request = self.context.get('request')
+        if obj.cover and request:
+            return request.build_absolute_uri(obj.cover.url)
+        return None
+    
+    def create(self, validated_data):
+        # ✅ Le publisher est automatiquement assigné
+        if 'publisher' not in validated_data:
+            validated_data['publisher'] = self.context['request'].user.roles_universite.first().universite
+        return super().create(validated_data)    

@@ -8,11 +8,12 @@ from django.utils.text import slugify
 from rest_framework import viewsets, permissions, filters, generics, status
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
-from .models import Universite, Domaine, RoleUniversite,News
+from .models import Universite, Domaine, RoleUniversite,News,OldStudent
 from .serializers import (
     UniversiteSerializer,
     DomaineSerializer,
     UserRoleSerializer,
+    OldStudentSerializer,
     NewsSerializer,
     RoleUniversiteSerializer,
 )
@@ -443,6 +444,41 @@ class NewsBySlugViewSet(viewsets.ModelViewSet):
         # 2. s’il ne reste plus aucune université → on supprime la news
         if not news.universities.exists():
             news.delete()
+            return Response({'detail': 'News supprimée (dernière université).'},
+                            status=status.HTTP_204_NO_CONTENT)
+
+        return Response({'detail': 'Université retirée.'},
+                        status=status.HTTP_200_OK)    
+class OldStudentBySlugViewSet(viewsets.ModelViewSet):
+    """CRUD complet filtré sur l’université (slug)"""
+    serializer_class = OldStudentSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def get_university(self):
+        return get_object_or_404(Universite, slug=self.kwargs['slug'])
+
+    def get_queryset(self):
+        return OldStudent.objects.filter(publisher=self.get_university())
+
+    def perform_create(self, serializer):
+        # on lie automatiquement au slug de l’URL
+        serializer.save(publisher=self.get_university())
+    from rest_framework.decorators import action    
+    @action(detail=True, methods=['delete'], url_path='dissociate')
+    def dissociate(self, request, slug=None, pk=None):
+        """
+        Retire l'université 'slug' de la news.
+        Si c'était la dernière → suppression complète.
+        """
+        university = self.get_university()          # slug de l'URL
+        oldstudent = self.get_object()                    # pk de l'URL
+
+        # 1. on retire l’université (relation M-N)
+        oldstudent.universities.remove(university)
+
+        # 2. s’il ne reste plus aucune université → on supprime la news
+        if not oldstudent.universities.exists():
+            oldstudent.delete()
             return Response({'detail': 'News supprimée (dernière université).'},
                             status=status.HTTP_204_NO_CONTENT)
 

@@ -129,3 +129,16 @@ class News(models.Model):
                 self.slug = f"{original_slug}-{counter}"
                 counter += 1
         super().save(*args, **kwargs)
+class OldStudent(models.Model):
+    title = models.CharField(max_length=200)
+
+    body = models.TextField()
+    cover = models.ImageField(upload_to='oldstudent_covers/', blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    publisher = models.ForeignKey('universites.Universite', on_delete=models.CASCADE)
+    def save(self, *args, **kwargs):
+        # ✅ Auto-génération du slug si vide
+        super().save(*args, **kwargs)
+   
+            

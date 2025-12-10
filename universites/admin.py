@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import Universite, Domaine, RoleUniversite ,News
+from .models import Universite, Domaine, RoleUniversite ,News,OldStudent
 
 
 @admin.register(Universite)
@@ -52,5 +52,14 @@ class NewsAdmin(admin.ModelAdmin):
     ordering = ['-publish_at']
 
   
+@admin.register(OldStudent)
+class oldstudentAdmin(admin.ModelAdmin):
+    list_display = ('title', 'publisher', 'created_at')
+    list_filter  = ('title', 'created_at')
+    search_fields = ('title', 'headline', 'body')
 
+
+
+    
+    
   
