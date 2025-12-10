@@ -3,14 +3,19 @@ from memoires.models import Memoire, Encadrement, Notation
 from universites.models import Domaine, Universite
 from users.serializers import UserSerializer
 from interactions.models import Commentaire, Telechargement
+from users.models import CustomUser
 
 
 # memoires/serializers.py  (ou interactions/serializers.py)
 
+class UtilisateurSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CustomUser  # Assurez-vous d'importer votre modèle CustomUser
+        fields = ['id','nom', 'prenom', 'sexe', 'email', 'type', 'photo_profil','realisation_linkedin']
 
 
 class CommentaireSerializer(serializers.ModelSerializer):
-    utilisateur = serializers.StringRelatedField()  # ou un nested serializer si tu veux plus de détails
+    utilisateur = UtilisateurSerializer(read_only=True)   # ou un nested serializer si tu veux plus de détails
 
     class Meta:
         model = Commentaire

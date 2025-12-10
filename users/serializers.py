@@ -40,7 +40,7 @@ class UserSerializer(serializers.ModelSerializer):
         if request and request.user != instance:
             # garder l'email visible aux membres de la même université
             same_univ = instance.roles_univ.filter(
-                universite__slug=request.user.role_univ.first().universite.slug
+                universite__slug=request.user.roles_univ.first().universite.slug
             ).exists()
             if not same_univ:
                 rep.pop("email", None)

@@ -283,13 +283,18 @@ class DomaineSuggestView(generics.GenericAPIView):
         q = request.GET.get('q', '').strip()
         if len(q) < 2:
             return Response([])
+
+        # Normaliser et créer le slug
         cleaned = unicodedata.normalize('NFKD', q).encode('ASCII', 'ignore').decode('ASCII')
         slug_q = slugify(cleaned) or slugify(q)
+
+        # Trouver les domaines correspondants sans filtrer par université
         candidates = (
             Domaine.objects.annotate(similarity=TrigramSimilarity('slug', slug_q))
-            .filter(similarity__gte=0.3)
+            .filter(similarity__gte=0.3)  # Ajustez le seuil selon vos besoins
             .order_by('-similarity')[:5]
         )
+        
         return Response(self.get_serializer(candidates, many=True).data)
 
 
@@ -299,7 +304,8 @@ class DomaineByUniversiteListView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        univ = get_object_or_404(Universite, pk=self.kwargs['pk'])
+        univ_slug = self.kwargs['univ_slug']
+        univ = get_object_or_404(Universite, slug=univ_slug)
         return univ.domaines.all()
 from universites.models import Universite
 from .serializers import RegisterViaUniversiteSerializer
@@ -337,19 +343,42 @@ class DomaineCreateInUniversiteView(generics.CreateAPIView):
     permission_classes = [IsAdminInUniversite]   # ou [IsAuthenticated] si tu veux plus souple
 
     def perform_create(self, serializer):
-        univ = get_object_or_404(Universite, slug=self.kwargs['univ_slug'])
-        nom = serializer.validated_data['nom']
-        cleaned = unicodedata.normalize('NFKD', nom).encode('ASCII', 'ignore').decode('ASCII')
-        slug = slugify(cleaned) or slugify(nom)
-        # dé-duplication
-        counter = 1
-        while Domaine.objects.filter(slug=slug).exists():
-            slug = f"{slugify(nom)}-{counter}"
-            counter += 1
-        domaine = serializer.save(slug=slug)
-        domaine.universites.add(univ)   # rattachement immédiat 
+        try:
+            univ = get_object_or_404(Universite, slug=self.kwargs['univ_slug'])
+            nom = serializer.validated_data['nom']
+            cleaned = unicodedata.normalize('NFKD', nom).encode('ASCII', 'ignore').decode('ASCII')
+            slug = slugify(cleaned) or slugify(nom)
+            # dé-duplication
+            counter = 1
+            while Domaine.objects.filter(slug=slug).exists():
+                slug = f"{slugify(nom)}-{counter}"
+                counter += 1
+            domaine = serializer.save(slug=slug)
+            domaine.universites.add(univ)
+        except Exception as e:
+            # Gérer les exceptions
+            print(f"Erreur lors de la création du domaine: {e}")
+            raise  # Laissez les erreurs remonter
+class DomaineDestroyInUniversiteView(generics.DestroyAPIView):
+    permission_classes = [IsAdminInUniversite]
 
+    def get_queryset(self):
+        # Vous pouvez filtrer ici si besoin
+        return Domaine.objects.all()
 
+    def delete(self, request, univ_slug, domaine_slug, *args, **kwargs):
+        universite = get_object_or_404(Universite, slug=univ_slug)
+        domaine = get_object_or_404(Domaine, slug=domaine_slug)
+
+        # Retirer l'université du domaine
+        domaine.universites.remove(universite)
+
+        if not domaine.universites.exists():
+            # Si le domaine n'est associé à aucune autre université, supprimer le domaine
+            domaine.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        
+        return Response(status=status.HTTP_200_OK)
 class UserRoleInUniversityView(generics.RetrieveAPIView):
     """
     GET /api/auth/<univ_slug>/my-role/

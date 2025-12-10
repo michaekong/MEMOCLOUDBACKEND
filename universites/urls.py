@@ -17,6 +17,7 @@ from .views import (
     DomaineSuggestView,
     NewsGlobalViewSet,
     NewsBySlugViewSet,
+    DomaineDestroyInUniversiteView,
     DomaineByUniversiteListView,
     UserRoleInUniversityView,
 )
@@ -59,9 +60,10 @@ urlpatterns = [
     path("universites/<int:pk>/membres/<int:user_id>/", MembreRemoveView.as_view(), name="univ-membre-remove"),
     path("universites/bulk-delete/", BulkDeleteUniversitesView.as_view(), name="univ-bulk-delete"),
     path("universites/export/csv/", ExportUniversitesCSVView.as_view(), name="univ-export-csv"),
-    path("domaines/suggest/", DomaineSuggestView.as_view(), name="domaine-suggest"),
-    path("universites/<int:pk>/domaines/", DomaineByUniversiteListView.as_view(), name="univ-domaines"),
-    path("<slug:univ_slug>/domaines/", DomaineCreateInUniversiteView.as_view(), name="domaine-create-in-univ"),
-    path("auth/<str:univ_slug>/my-role/", UserRoleInUniversityView.as_view(), name="user-role-in-university"),
+       path('universites/<slug:univ_slug>/domaines/', DomaineByUniversiteListView.as_view(), name='univ-domaines'),
+    path('universites/<slug:univ_slug>/domaines/create/', DomaineCreateInUniversiteView.as_view(), name='domaine-create-in-univ'),
+    path('universites/<str:univ_slug>/domaines/<str:domaine_slug>/', DomaineDestroyInUniversiteView.as_view(), name='destroy_domaine_in_universite'),
+    path('domaines/suggest/', DomaineSuggestView.as_view(), name='domaine-suggest'),
+ path("auth/<str:univ_slug>/my-role/", UserRoleInUniversityView.as_view(), name="user-role-in-university"),
     path("auth/universities/<str:univ_slug>/user-role/<int:user_id>/", UserRoleInUniversityByIdView.as_view(), name="user-role-in-university-by-id"),
 ]

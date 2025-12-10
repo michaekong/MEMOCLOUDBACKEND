@@ -167,7 +167,7 @@ class NewsSerializer(serializers.ModelSerializer):
                   'cover_url', 'topics', 'is_published', 'publish_at',
                   'created_at', 'publisher_slug']
         read_only_fields = ('id', 'slug', 'created_at', 'updated_at')  # ✅ slug en read-only
-    
+        ordering = ['publish_at']
     def get_cover_url(self, obj):
         request = self.context.get('request')
         if obj.cover and request:
