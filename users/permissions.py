@@ -99,6 +99,7 @@ class IsAdminInUniversite(permissions.BasePermission):
     """
     def has_permission(self, request, view):
         # Vérifie si l'utilisateur est authentifié
+        
         return request.user and request.user.is_authenticated
 
     def has_object_permission(self, request, view, obj):
@@ -110,4 +111,5 @@ class IsAdminInUniversite(permissions.BasePermission):
                 roles__utilisateur=request.user,
                 roles__role__in=['admin', 'superadmin', 'bigboss']
             ).exists()
+            
         return False

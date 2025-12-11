@@ -48,10 +48,13 @@ class Memoire(models.Model):
     def delete(self, *args, **kwargs):
         # Protection : on interdit la suppression si des données liées existent
         if (
+            
             self.encadrements.exists()
             or self.notations.exists()
             or self.telechargements.exists()
         ):
+            print(self.Encadrements)
+            
             raise ValidationError("Impossible de supprimer : mémoire lié à des données.")
         super().delete(*args, **kwargs)
 

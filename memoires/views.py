@@ -18,8 +18,9 @@ from universites.permissions import (
     IsAdminOfUniversite,
     IsAuthorOrAdminOfUniversite,
 )
+from universites.permissions import IsAdminOfUniversite
 from django.contrib.auth import get_user_model
-
+from django.db import transaction
 User = get_user_model()
 from rest_framework import generics, permissions, pagination
 from interactions.models import Commentaire
@@ -83,8 +84,9 @@ class UniversiteMemoireViewSet(viewsets.ModelViewSet):
         return [IsAuthorOrAdminOfUniversite()]
 
     def perform_create(self, serializer):
+        permission_classes = [IsAdminOfUniversite] 
         univ = self.get_universite()
-        memoire = serializer.save(auteur=self.request.user)
+        memoire = serializer.save()
         memoire.universites.add(univ)
 
     @extend_schema(
@@ -123,6 +125,36 @@ class UniversiteMemoireViewSet(viewsets.ModelViewSet):
                 }
             ).data
         )
+    @action(detail=True, methods=['delete'], url_path='suppression-totale')
+    def suppression_totale(self, request, *args, **kwargs):
+        permission_classes = [IsAdminOfUniversite] 
+        """
+        Suppression complète d'un mémoire ET de toutes ses relations.
+        """
+        memoire = self.get_object()
+
+        with transaction.atomic():
+            # 1. Log avant suppression
+            print(f"[ADMIN] Suppression totale du mémoire {memoire.id} – {memoire.titre}")
+
+            # 2. Suppression / détachement des relations
+            memoire.encadrements.all().delete()
+            memoire.notations.all().delete()
+            memoire.telechargements.all().delete()
+            memoire.likes.all().delete()
+            memoire.commentaires.all().delete()
+            memoire.signalements.all().delete()
+
+            # 3. Suppression des fichiers physiques (facultatif)
+            if memoire.fichier_pdf:
+                memoire.fichier_pdf.delete(save=False)
+            if memoire.images:
+                memoire.images.delete(save=False)
+
+            # 4. Suppression finale
+            memoire.delete()
+
+        return Response(status=204)
 
 class MemoireAnneesView(generics.GenericAPIView):
     permission_classes = [permissions.AllowAny]

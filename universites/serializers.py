@@ -65,6 +65,11 @@ class DomaineSerializer(serializers.ModelSerializer):
         slug = slugify(cleaned) or slugify(nom)
         validated_data['slug'] = slug
         return super().create(validated_data)
+    def update(self, instance, validated_data):
+        # on autorise uniquement le changement de nom
+        instance.nom = validated_data.get('nom', instance.nom)
+        instance.save()  # le slug est recalculé dans le .save() du modèle
+        return instance
 
 
 # ------------------------------------------------------------------

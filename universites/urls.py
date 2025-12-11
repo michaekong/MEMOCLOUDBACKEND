@@ -1,5 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+from . import views 
 from .views import (
     UniversiteViewSet,
     DomaineViewSet,
@@ -78,5 +79,14 @@ urlpatterns = [
     path('universites/<str:univ_slug>/domaines/<str:domaine_slug>/', DomaineDestroyInUniversiteView.as_view(), name='destroy_domaine_in_universite'),
     path('domaines/suggest/', DomaineSuggestView.as_view(), name='domaine-suggest'),
  path("auth/<str:univ_slug>/my-role/", UserRoleInUniversityView.as_view(), name="user-role-in-university"),
+ 
+
+    # ... autres patterns ...
+    path(
+        'universites/<slug:univ_slug>/domaines/<slug:domaine_slug>/update/',
+        views.domaine_update,
+        name='domaine-update'
+    ),
+
     path("auth/universities/<str:univ_slug>/user-role/<int:user_id>/", UserRoleInUniversityByIdView.as_view(), name="user-role-in-university-by-id"),
 ]

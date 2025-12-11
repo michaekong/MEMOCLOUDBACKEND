@@ -17,6 +17,7 @@ from .serializers import (
     NewsSerializer,
     RoleUniversiteSerializer,
 )
+from universites.permissions import IsMemberOfUniversite,IsAdminOfUniversite
 from django.core.mail import send_mail, EmailMessage
 from django.template.loader import render_to_string
 from users.tokens import make_email_token, verify_email_token
@@ -273,8 +274,28 @@ class DomaineViewSet(viewsets.ModelViewSet):
         if instance.universites.exists():
             raise ValidationError("Ce domaine est encore rattaché à des universités.")
         super().perform_destroy(instance)
+from rest_framework.decorators import api_view, permission_classes
+@api_view(['PATCH', 'PUT'])
+@permission_classes([IsAdminInUniversite])
+def domaine_update(request, univ_slug, domaine_slug):
+    """
+    Met à jour le nom (et donc le slug) d’un domaine
+    rattaché à l’université <univ_slug>.
+    """
+    universite = get_object_or_404(Universite, slug=univ_slug)
+    domaine    = get_object_or_404(Domaine, slug=domaine_slug)
 
+    # Vérifie que le domaine est bien lié à cette université
+    if not domaine.universites.filter(id=universite.id).exists():
+        return Response({'detail': 'Domaine non rattaché à cette université'},
+                        status=status.HTTP_404_NOT_FOUND)
 
+    serializer = DomaineSerializer(domaine, data=request.data, partial=True)
+    if serializer.is_valid(raise_exception=True):
+        serializer.save()  # slug regénéré automatiquement
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 # -------------------- Suggestion orthographique --------------------
 class DomaineSuggestView(generics.GenericAPIView):
     serializer_class = DomaineSerializer
@@ -341,7 +362,8 @@ class RegisterViaUniversiteView(generics.CreateAPIView):
 # universites/views.py
 class DomaineCreateInUniversiteView(generics.CreateAPIView):
     serializer_class = DomaineSerializer
-    permission_classes = [IsAdminInUniversite]   # ou [IsAuthenticated] si tu veux plus souple
+    permission_classes = [IsAdminOfUniversite]  
+    # ou [IsAuthenticated] si tu veux plus souple
 
     def perform_create(self, serializer):
         try:
