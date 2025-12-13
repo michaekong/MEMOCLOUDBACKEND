@@ -3,7 +3,7 @@ version: "3.9"
 services:
   api:
     build: .
-    command: daphne config.asgi:application --port 8000 --bind 0.0.0.0
+    # command: daphne config.asgi:application --port 8000 --bind 0.0.0.0
     restart: always
     ports:
       - 8009:8000
@@ -11,7 +11,7 @@ services:
       - .env.production
     volumes:
       - .:/app
-      - /var/www/camsecureplot/staticfiles:/app/staticfiles
+      - /var/www/mcb/staticfiles:/app/staticfiles
     networks:
       - mcb-network
 
