@@ -2,7 +2,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.utils.text import slugify
-from .models import Universite, Domaine, RoleUniversite, News
+from .models import Universite, Domaine, RoleUniversite, News,OldStudent
 import unicodedata
 from users.serializers import RegisterSerializer
 User = get_user_model()
@@ -189,7 +189,7 @@ class OldStudentSerializer(serializers.ModelSerializer):
     publisher_slug = serializers.CharField(source='publisher.slug', read_only=True)
     
     class Meta:
-        model = News
+        model = OldStudent
         fields = ['id', 'title', 'body', 'cover',
                   'cover_url', 
                   'created_at', 'publisher_slug']

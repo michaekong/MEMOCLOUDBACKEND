@@ -20,6 +20,7 @@ DEBUG = True
 ALLOWED_HOSTS = [
    
     "memocloudbackend.onrender.com",
+    "mcb.reimca-app.com",
     "frontcamsec.vercel.app",
     "127.0.0.1",
     "memocloudfront.vercel.app",
@@ -228,6 +229,7 @@ CORS_ALLOW_HEADERS = [
 
 CORS_ALLOWED_ORIGINS = [
     "https://memocloudbackend.onrender.com",
+    "https://mcb.reimca-app.com",
     "https://memocloudfront.vercel.app",
     "https://camsecplots.netlify.app",
     "http://127.0.0.1:5500",
@@ -241,8 +243,9 @@ CORS_ALLOW_CREDENTIALS = True
 
 CSRF_TRUSTED_ORIGINS = [
     "https://camsecplots.netlify.app",
-    "https://camsecureplot.reimca-app.com",
+
     "https://frontcamsec.vercel.app",
+    "https://mcb.reimca-app.com",
     "http://127.0.0.1:5500",
     "https://memocloudbackend.onrender.com",
     "http://127.0.0.1:5501",
