@@ -15,13 +15,13 @@ services:
     networks:
       - mcb-network
 
-  redis:
-    image: redis:latest
-    restart: "on-failure"
-    ports:
-      - 6380:6379
-    networks:
-      - mcb-network
+  # redis:
+  #   image: redis:latest
+  #   restart: "on-failure"
+  #   ports:
+  #     - 6380:6379
+  #   networks:
+  #     - mcb-network
 
 networks:
   mcb-network:
