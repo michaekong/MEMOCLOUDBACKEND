@@ -13,7 +13,7 @@ services:
       - .:/app
       - /var/www/camsecureplot/staticfiles:/app/staticfiles
     networks:
-      - camsecureplot-network
+      - mcb-network
 
   redis:
     image: redis:latest
