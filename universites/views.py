@@ -501,7 +501,7 @@ class OldStudentBySlugViewSet(viewsets.ModelViewSet):
         # 2. s’il ne reste plus aucune université → on supprime la news
         if not oldstudent.universities.exists():
             oldstudent.delete()
-            return Response({'detail': 'News supprimée (dernière université).'},
+            return Response({'detail': ' supprimée (dernière université).'},
                             status=status.HTTP_204_NO_CONTENT)
 
         return Response({'detail': 'Université retirée.'},

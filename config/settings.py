@@ -243,8 +243,9 @@ CORS_ALLOW_CREDENTIALS = True
 
 CSRF_TRUSTED_ORIGINS = [
     "https://camsecplots.netlify.app",
-    "https://camsecureplot.reimca-app.com",
+
     "https://frontcamsec.vercel.app",
+    "https://mcb.reimca-app.com",
     "http://127.0.0.1:5500",
     "https://memocloudbackend.onrender.com",
     "http://127.0.0.1:5501",
