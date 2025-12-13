@@ -15,14 +15,14 @@ echo "==============================================================="
 echo "==========> makemigrations users"
 python manage.py makemigrations users
 
-echo "==========> makemigrations transactions"
-python manage.py makemigrations transactions
+echo "==========> makemigrations interactions"
+python manage.py makemigrations interactions
 
-echo "==========> makemigrations parcelles"
-python manage.py makemigrations parcelles
+echo "==========> makemigrations memoires"
+python manage.py makemigrations memoires
 
-echo "==========> makemigrations messagerie"
-python manage.py makemigrations messagerie
+echo "==========> makemigrations universites"
+python manage.py makemigrations universites
 
 echo "==========> makemigrations Documents"
 python manage.py makemigrations Documents
