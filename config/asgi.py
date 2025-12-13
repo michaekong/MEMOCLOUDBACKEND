@@ -1,14 +1,15 @@
 import os
 import django
-from channels.routing import ProtocolTypeRouter, URLRouter
+from channels.routing import ProtocolTypeRouter
 from channels.auth import AuthMiddlewareStack
 from django.core.asgi import get_asgi_application
-from messagerie import routing
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
-django.setup()  # 👈 important avant d'importer routing
+django.setup()  # Important to call before creating the application
 
 application = ProtocolTypeRouter({
     "http": get_asgi_application(),
-    "websocket": AuthMiddlewareStack(URLRouter(routing.websocket_urlpatterns)),
+    # Remove the websocket entry if not needed
 })
+
+# If you need to handle WebSocket connections later, add them here.
