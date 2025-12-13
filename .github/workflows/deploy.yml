@@ -27,7 +27,7 @@ jobs:
           echo "EMAIL_HOST_USER=${{ secrets.EMAIL_HOST_USER }}" >> .env.production
           echo "EMAIL_HOST_PASSWORD=${{ secrets.EMAIL_HOST_PASSWORD }}" >> .env.production
           echo "EMAIL_USE_TLS=${{ secrets.EMAIL_USE_TLS }}" >> .env.production
-          echo "EMAIL_USE_TLS=${{ secrets.EMAIL_PORT }}" >> .env.production
+          echo "EMAIL_PORT=${{ secrets.EMAIL_PORT }}" >> .env.production
 
       - name: Ensure target directory exists on VPS
         run: |
