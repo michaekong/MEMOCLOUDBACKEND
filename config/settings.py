@@ -149,15 +149,16 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 # config/settings.py
-STATIC_URL = '/static/'
-MEDIA_URL  = '/media/'
+# settings.py
 
+
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 # dossiers collectés par « collectstatic »
-STATIC_ROOT = BASE_DIR / 'staticfiles'
 
-# uploads des utilisateurs
-MEDIA_ROOT  = BASE_DIR / 'media'
-
+STATIC_URL = '/static/'  # This line must be present and correctly set
+STATIC_ROOT = BASE_DIR / 'staticfiles'  # This should point to your desired directory
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -274,6 +275,6 @@ CHANNEL_LAYERS = {
     },
 }
 from cryptography.fernet import Fernet
-print(Fernet.generate_key().decode())  # copier/coller dans settings.py
+
 # clé 32 bytes base64 → générée une fois : Fernet.generate_key()
 INVITE_CODE_KEY = b'0MYfxmqMEYbOeBXxAnC_IRA2vdYTaG7wWQ5HMy1NXD8==='
