@@ -213,7 +213,7 @@ SPECTACULAR_SETTINGS = {
     'SERVE_INCLUDE_SCHEMA': False,  # swagger-ui & redoc séparés
 }
 
-FRONTEND_URL = "https://memocloudfront.vercel.app",
+FRONTEND_URL = "https://memocloudfront.vercel.app"
 
 CORS_ALLOW_HEADERS = [
     "accept",

@@ -45,7 +45,7 @@ from .serializers import (
     RoleUpdateSerializer,
 )
 from users.tokens import make_email_token, verify_email_token
-
+from urllib.parse import urljoin
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,7 @@ class RegisterView(generics.CreateAPIView):
     def perform_create(self, serializer):
         user = serializer.save()
         token = make_email_token(user.id)
-        verify_url = f"{settings.FRONTEND_URL}/verify-email/?token={token}"
+        verify_url = f"{settings.FRONTEND_URL}/verify-email.html?token={token}"
 
         html_content = render_to_string(
             "emails/verify_email.html", {"verification_url": verify_url}
@@ -87,7 +87,7 @@ class RegisterViaUniversiteView(generics.CreateAPIView):
         user = serializer.save()
         # envoi du mail de vérification
         token = make_email_token(user.id)
-        verify_url = f"{settings.FRONTEND_URL}/verify-email/?token={token}"
+        verify_url = f"{settings.FRONTEND_URL}/verify-email.html?token={token}"
 
         html_content = render_to_string(
             "emails/verify_email.html", {"verification_url": verify_url}
@@ -780,24 +780,7 @@ class UniversiteBulkCodesView(generics.CreateAPIView):
             },
             status=status.HTTP_201_CREATED,
         )
-class RegisterViaUniversiteView(generics.CreateAPIView):
-    serializer_class = RegisterViaUniversiteSerializer2
-    permission_classes = [permissions.AllowAny]
 
-    def perform_create(self, serializer):
-        user = serializer.save()
-        token = make_email_token(user.id)
-        verify_url = f"{settings.FRONTEND_URL}/verify-email/?token={token}"
-
-        html_content = render_to_string("emails/verify_email.html", {"verification_url": verify_url})
-        email = EmailMessage(
-            subject="Vérifiez votre adresse email",
-            body=html_content,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[user.email],
-        )
-        email.content_subtype = "html"
-        email.send(fail_silently=False)
 
 
 class UpdateRoleView(generics.UpdateAPIView):
