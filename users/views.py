@@ -209,7 +209,6 @@ class ChangePasswordView(GenericAPIView):
         return Response({"detail": "Password changed successfully."})
 
 
-# -------------------- Demande réinitialisation --------------------
 class ResetPasswordRequestView(GenericAPIView):
     serializer_class = ResetPasswordRequestSerializer
     permission_classes = [permissions.AllowAny]
@@ -230,23 +229,20 @@ class ResetPasswordRequestView(GenericAPIView):
 
         token = PasswordResetTokenGenerator().make_token(user)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
-
-        # Créer un dictionnaire avec tous les paramètres
+        print("uuid",   uid)
         params = {
             'uidb64': uid,
             'token': token,
             'new_password': new_password
         }
 
-        # Convertir en JSON
+        # Convertir en JSON et encoder
         params_json = json.dumps(params)
-        # Encoder la chaîne JSON
         encoded_params = urllib.parse.quote(params_json)
-        reset_link = f"{settings.FRONTEND_URL}/confirm-reset-password/?params={encoded_params}"
+        reset_link = f"{settings.FRONTEND_URL}/confirm-reset-password.html?params={encoded_params}"
 
-        logger.debug(f"Reset link: {reset_link}")  # Log de débogage
+        logger.debug(f"Reset link: {reset_link}")
 
-        # Préparer le contenu HTML de l'e-mail
         html_content = render_to_string(
             "emails/reset_password_confirmation_email.html", 
             {
@@ -274,44 +270,40 @@ class ResetPasswordConfirmView(GenericAPIView):
     http_method_names = ['get']
 
     def get(self, request):
-        # 1. Récupération brute du paramètre
         params_encoded = request.GET.get('params')
+        
         if not params_encoded:
-            # Gmail ré-encode le '=' → la clé devient 'params%3D....'
-            # On prend la première (et unique) clé du QueryDict
-            if request.GET:
-                params_encoded = list(request.GET.keys())[0]
-            else:
-                return Response({'detail': 'Paramètres manquants.'}, status=400)
+            return Response({'detail': 'Paramètres manquants.'}, status=400)
 
-        # 2. Décodage éventuel supplémentaire
-        if '%' in params_encoded:
-            params_encoded = urllib.parse.unquote(params_encoded)
-
-        # 3. On enlève le 'params=' s’il traîne
-        if params_encoded.startswith('params='):
-            params_encoded = params_encoded[7:]
-
+        # Décodage et désérialisation JSON
         try:
-            params = json.loads(urllib.parse.unquote(params_encoded))
+            params_encoded = urllib.parse.unquote(params_encoded)
+            logger.debug(f"Decoded params: {params_encoded}")
+            params = json.loads(params_encoded)
+
             uidb64 = params['uidb64']
             token = params['token']
             new_password = params['new_password']
-        except Exception as e:
-            logger.error('Bad reset params: %s', e)
-            return Response({'detail': 'Lien invalide.'}, status=400)
+        except json.JSONDecodeError:
+            logger.error('Erreur de désérialisation JSON pour les paramètres')
+            return Response({'detail': 'Paramètres mal formés.'}, status=400)
+        except KeyError as e:
+            logger.error(f'Paramètre manquant: {e}')
+            return Response({'detail': 'Paramètre manquant.'}, status=400)
 
-        # 4. Vérification user + token
+        # Vérification utilisateur + token
         try:
             uid = force_str(urlsafe_base64_decode(uidb64))
+            
             user = User.objects.get(pk=uid)
         except (ValueError, OverflowError, User.DoesNotExist):
             return Response({'detail': 'Lien invalide.'}, status=400)
 
         if not PasswordResetTokenGenerator().check_token(user, token):
+            logger.error(f"Token validation failed for {user.email} with token {token}")
             return Response({'detail': 'Lien invalide ou expiré.'}, status=400)
-
-        # 5. Réinitialisation
+        print(uid)
+        # Réinitialisation
         user.set_password(new_password)
         user.save()
         return Response({'detail': 'Mot de passe réinitialisé.'})
