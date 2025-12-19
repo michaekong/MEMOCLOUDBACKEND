@@ -30,7 +30,10 @@ ALLOWED_HOSTS = [
 # ALLOWED_HOSTS = ['*']
 
 # Application definition
-
+DATA_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024      # 50 Mo
+FILE_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024      # 50 Mo
+# Timeout upload (optionnel)
+FILE_UPLOAD_TIMEOUT = 300  # secondes
 INSTALLED_APPS = [
     'channels',
     'django.contrib.admin',
@@ -173,6 +176,13 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",
     ),
+     'DEFAULT_PARSER_CLASSES': [
+        'rest_framework.parsers.MultiPartParser',
+        'rest_framework.parsers.JSONParser',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [],
+    # Optionnel : augmenter le timeout
+    'DEFAULT_THROTTLE_CLASSES': [],
 }
 
 SIMPLE_JWT = {
