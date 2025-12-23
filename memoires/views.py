@@ -88,6 +88,12 @@ class UniversiteMemoireViewSet(viewsets.ModelViewSet):
         univ = self.get_universite()
         memoire = serializer.save()
         memoire.universites.add(univ)
+        # Récupérer les universités mères et les ajouter au mémoire
+        universites_meres = univ.get_universites_meres()  # Obtention des universités mères
+        for affiliation in universites_meres:
+            memoire.universites.add(affiliation.universite_mere)  # Ajout de chaque université mère au mémoire
+
+
 
     @extend_schema(
         summary="Statistiques mémoires de l’université",

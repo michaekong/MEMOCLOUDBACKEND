@@ -18,6 +18,12 @@ class Universite(models.Model):
 
     def __str__(self):
         return f"{self.nom} ({self.acronyme})"
+    
+    def get_universites_meres(self):
+        """
+        Retourne toutes les universités mères pour cette université.
+        """
+        return Affiliation.objects.filter(universite_affiliee=self).select_related('universite_mere')
 
     def save(self, *args, **kwargs):
         if not self.slug:
@@ -34,6 +40,25 @@ class Universite(models.Model):
                 counter += 1
         super().save(*args, **kwargs)
 
+class Affiliation(models.Model):
+    universite_mere = models.ForeignKey(
+        'Universite', 
+        on_delete=models.CASCADE, 
+        related_name='universites_affiliees'
+    )
+    universite_affiliee = models.ForeignKey(
+        'Universite', 
+        on_delete=models.CASCADE, 
+        related_name='affiliations'
+    )
+    date_debut = models.DateTimeField(auto_now_add=True)
+    date_fin = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        unique_together = ('universite_mere', 'universite_affiliee')
+
+    def __str__(self):
+        return f"{self.universite_affiliee} affiliée à {self.universite_mere}"
 
 class Domaine(models.Model):
     nom = models.CharField(max_length=100, unique=True)

@@ -62,4 +62,12 @@ class oldstudentAdmin(admin.ModelAdmin):
 
     
     
-  
+from .models import Affiliation
+class AffiliationAdmin(admin.ModelAdmin):
+    list_display = ('universite_mere', 'universite_affiliee', 'date_debut', 'date_fin')
+    list_filter = ('universite_mere', 'date_debut', 'date_fin')
+    search_fields = ('universite_mere__nom', 'universite_affiliee__nom')
+    ordering = ('date_debut',)
+    # Ajoutez d'autres options si nécessaire
+
+admin.site.register(Affiliation, AffiliationAdmin)

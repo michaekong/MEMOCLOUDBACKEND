@@ -219,6 +219,16 @@ class RegisterViaUniversiteSerializer(serializers.ModelSerializer):
         RoleUniversite.objects.create(
             utilisateur=user, universite=univ, role=validated_data["role"]
         )
+        # 4. Récupérer les universités mères et créer des rôles pour chacune d'elles
+        universites_meres = univ.get_universites_meres()
+        role = validated_data.pop("role")  # Assurez-vous que le rôle est récupéré une seule fois
+        for affiliation in universites_meres:
+            RoleUniversite.objects.create(
+                utilisateur=user,
+                universite=affiliation.universite_mere,
+                role=role
+            )
+
         return user
 
 

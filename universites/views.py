@@ -261,14 +261,33 @@ class DomaineViewSet(viewsets.ModelViewSet):
         return [permissions.AllowAny()]
 
     def perform_create(self, serializer):
-        nom = serializer.validated_data['nom']
-        cleaned = unicodedata.normalize('NFKD', nom).encode('ASCII', 'ignore').decode('ASCII')
-        slug = slugify(cleaned) or slugify(nom)
-        if Domaine.objects.filter(slug=slug).exists():
-            instance = Domaine.objects.get(slug=slug)
-            serializer.instance = instance
-            return instance
-        serializer.save(slug=slug)
+        try:
+            univ = get_object_or_404(Universite, slug=self.kwargs['univ_slug'])
+            nom = serializer.validated_data['nom']
+            cleaned = unicodedata.normalize('NFKD', nom).encode('ASCII', 'ignore').decode('ASCII')
+            slug = slugify(cleaned) or slugify(nom)
+            
+            # Dé-duplication
+            counter = 1
+            original_slug = slug  # Sauvegarder l'original
+            while Domaine.objects.filter(slug=slug).exists():
+                slug = f"{original_slug}-{counter}"  # Utiliser l'original pour éviter la confusion
+                counter += 1
+            
+            # Sauvegarder le domaine
+            domaine = serializer.save(slug=slug)
+            
+            # Ajouter l'université actuelle
+            domaine.universites.add(univ)
+            
+            # Ajouter les universités mères
+            for affiliation in univ.universites_affiliees.all():
+                print("sdfgvnb,", affiliation.universite_mere)
+                domaine.universites.add(affiliation.universite_mere)  # Ajouter chaque université mère
+            
+        except Exception as e:
+            print(f"Erreur lors de la création du domaine: {e}")
+            raise  # Laissez les erreurs remonter
 
     def perform_destroy(self, instance):
         if instance.universites.exists():
@@ -333,32 +352,7 @@ from universites.models import Universite
 from .serializers import RegisterViaUniversiteSerializer
 
 
-class RegisterViaUniversiteView(generics.CreateAPIView):
-    """
-    POST /api/auth/register-via-universite/
-    Crée un compte + l’ajoute immédiatement à l’université choisie.
-    """
-    serializer_class = RegisterViaUniversiteSerializer
-    permission_classes = [permissions.AllowAny]
-
-    def perform_create(self, serializer):
-        user = serializer.save()
-        # envoi du mail de vérification (réutilisation du système existant)
-        token = make_email_token(user.id)
-        verify_url = f"{settings.FRONTEND_URL}/verify-email/?token={token}"
-
-        html_content = render_to_string(
-            "emails/verify_email.html", {"verification_url": verify_url}
-        )
-        email = EmailMessage(
-            subject="Vérifiez votre adresse email",
-            body=html_content,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[user.email],
-        )
-        email.content_subtype = "html"
-        email.send(fail_silently=False)
-        logger.info(f"Email de vérification envoyé à {user.email}")    
+   
 # universites/views.py
 class DomaineCreateInUniversiteView(generics.CreateAPIView):
     serializer_class = DomaineSerializer
@@ -371,15 +365,26 @@ class DomaineCreateInUniversiteView(generics.CreateAPIView):
             nom = serializer.validated_data['nom']
             cleaned = unicodedata.normalize('NFKD', nom).encode('ASCII', 'ignore').decode('ASCII')
             slug = slugify(cleaned) or slugify(nom)
-            # dé-duplication
+            
+            # Dé-duplication
             counter = 1
+            original_slug = slug  # Sauvegarder l'original
             while Domaine.objects.filter(slug=slug).exists():
-                slug = f"{slugify(nom)}-{counter}"
+                slug = f"{original_slug}-{counter}"  # Utiliser l'original pour éviter la confusion
                 counter += 1
+            print("sdfghj")
+            # Sauvegarder le domaine
             domaine = serializer.save(slug=slug)
+            
+            # Ajouter l'université actuelle
             domaine.universites.add(univ)
+            
+            # Ajouter les universités mères
+            for affiliation in univ.get_universites_meres():
+                print(affiliation.universite_mere)
+                domaine.universites.add(affiliation.universite_mere)  # Ajouter chaque université mère
+            
         except Exception as e:
-            # Gérer les exceptions
             print(f"Erreur lors de la création du domaine: {e}")
             raise  # Laissez les erreurs remonter
 class DomaineDestroyInUniversiteView(generics.DestroyAPIView):
