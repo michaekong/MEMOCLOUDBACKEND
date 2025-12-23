@@ -206,3 +206,4 @@ class OldStudentSerializer(serializers.ModelSerializer):
         if 'publisher' not in validated_data:
             validated_data['publisher'] = self.context['request'].user.roles_universite.first().universite
         return super().create(validated_data)    
+    

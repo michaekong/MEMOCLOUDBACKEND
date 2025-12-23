@@ -487,25 +487,17 @@ class OldStudentBySlugViewSet(viewsets.ModelViewSet):
         serializer.save(publisher=self.get_university())
     from rest_framework.decorators import action    
     @action(detail=True, methods=['delete'], url_path='dissociate')
-    def dissociate(self, request, slug=None, pk=None):
-        """
-        Retire l'université 'slug' de la news.
-        Si c'était la dernière → suppression complète.
-        """
-        university = self.get_university()          # slug de l'URL
-        oldstudent = self.get_object()                    # pk de l'URL
+    def dissociate(self, request, slug=None, pk=None):      
+        university = self.get_university()
+        oldstudent = self.get_object()
 
-        # 1. on retire l’université (relation M-N)
-        oldstudent.universities.remove(university)
+        if oldstudent.publisher != university:
+            return Response({'detail': 'Cette université n’est pas la publisher de cette news.'},
+                            status=status.HTTP_403_FORBIDDEN)
 
-        # 2. s’il ne reste plus aucune université → on supprime la news
-        if not oldstudent.universities.exists():
-            oldstudent.delete()
-            return Response({'detail': ' supprimée (dernière université).'},
-                            status=status.HTTP_204_NO_CONTENT)
-
-        return Response({'detail': 'Université retirée.'},
-                        status=status.HTTP_200_OK)    
+        # Suppression directe
+        oldstudent.delete()
+        return Response({'detail': 'News supprimée.'}, status=status.HTTP_204_NO_CONTENT)
 
 
 class NewsGlobalViewSet(viewsets.ModelViewSet):

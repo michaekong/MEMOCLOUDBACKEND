@@ -59,7 +59,7 @@ urlpatterns = [
     path('universities/<slug:slug>/news/', news_by_slug_list, name='news-by-slug-list'),
     path('universities/<slug:slug>/news/<int:pk>/', news_by_slug_detail, name='news-by-slug-detail'),
     path('universities/<slug:slug>/oldstudent/', oldstudent_by_slug_list, name='oldstudent-by-slug-list'),
-    path('universities/<slug:slug>/oldsdent/<int:pk>/', oldstudent_by_slug_detail, name='oldstudent-by-slug-detail'),
+    path('universities/<slug:slug>/oldstudent/<int:pk>/', oldstudent_by_slug_detail, name='oldstudent-by-slug-detail'),
 
 
     # 2. Routes globales (via router)

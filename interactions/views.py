@@ -194,6 +194,12 @@ class NotationViewSet(viewsets.ViewSet):
         summary="Noter un mémoire",
         request=NotationCreateSerializer,
     )
+    def destroy(self, request, pk=None):
+        notation = get_object_or_404(
+            Notation, pk=pk
+        )
+        notation.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
     @action(detail=False, methods=["post"], url_path="noter")
     def noter(self, request, ser):
         memoire = get_object_or_404(Memoire, pk=ser.validated_data["memoire_id"])
