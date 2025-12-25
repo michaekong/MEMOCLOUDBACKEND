@@ -44,21 +44,28 @@ class RoleUniversiteAdmin(admin.ModelAdmin):
 @admin.register(News)
 class NewsAdmin(admin.ModelAdmin):
     # Affichage liste
-    list_display = ('title', 'publisher', 'topics', 'is_published', 'publish_at', 'created_at')
-    list_filter  = ('topics', 'is_published', 'created_at')
+    list_display = ('title', 'get_publishers', 'topics', 'is_published', 'publish_at', 'created_at')
+    list_filter  = ('topics', 'is_published', 'publishers', 'created_at')  # Ajoutez publishers ici
     search_fields = ('title', 'headline', 'body')
-
+    
     date_hierarchy = 'publish_at'
     ordering = ['-publish_at']
 
-  
+    # Méthode pour afficher les publishers de manière lisible
+    def get_publishers(self, obj):
+        return ", ".join(str(p) for p in obj.publishers.all())
+    get_publishers.short_description = 'Universités'  # Titre pour l'affichage
+
 @admin.register(OldStudent)
-class oldstudentAdmin(admin.ModelAdmin):
-    list_display = ('title', 'publisher', 'created_at')
-    list_filter  = ('title', 'created_at')
-    search_fields = ('title', 'headline', 'body')
-
-
+class OldStudentAdmin(admin.ModelAdmin):  # Renommez pour suivre la convention
+    list_display = ('title', 'get_publishers', 'created_at')
+    list_filter  = ('created_at', 'publishers')  # Ajoutez publishers ici
+    search_fields = ('title', 'body')
+    
+    # Méthode pour afficher les publishers de manière lisible
+    def get_publishers(self, obj):
+        return ", ".join(str(p) for p in obj.publishers.all())
+    get_publishers.short_description = 'Universités'  # Titre pour l'affichage
 
     
     

@@ -442,42 +442,43 @@ class UserRoleInUniversityByIdView(generics.RetrieveAPIView):
         instance = self.get_object()
         serializer = self.get_serializer(instance)
         return Response(serializer.data)        
+from rest_framework.decorators import action
 class NewsBySlugViewSet(viewsets.ModelViewSet):
-    """CRUD complet filtré sur l’université (slug)"""
     serializer_class = NewsSerializer
 
     def get_university(self):
         return get_object_or_404(Universite, slug=self.kwargs['slug'])
 
     def get_queryset(self):
-        return News.objects.filter(publisher=self.get_university())
+        return News.objects.filter(publishers=self.get_university())
 
     def perform_create(self, serializer):
-        # on lie automatiquement au slug de l’URL
-        serializer.save(publisher=self.get_university())
-    from rest_framework.decorators import action    
+        news = serializer.save()
+        univ = self.get_university()
+        news.publishers.add(univ)
+        # universités-mères via la méthode existante
+        affiliations = univ.get_universites_meres()
+        meres = [aff.universite_mere for aff in affiliations]
+        if meres:
+            news.publishers.add(*meres)
+
     @action(detail=True, methods=['delete'], url_path='dissociate')
     def dissociate(self, request, slug=None, pk=None):
-        """
-        Retire l'université 'slug' de la news.
-        Si c'était la dernière → suppression complète.
-        """
-        university = self.get_university()          # slug de l'URL
-        news = self.get_object()                    # pk de l'URL
+        university = self.get_university()
+        news = self.get_object()
 
-        # 1. on retire l’université (relation M-N)
-        news.universities.remove(university)
+        affiliations = university.get_universites_meres()
+        meres = [aff.universite_mere for aff in affiliations]
+        to_remove = [university] + meres
+        news.publishers.remove(*to_remove)
 
-        # 2. s’il ne reste plus aucune université → on supprime la news
-        if not news.universities.exists():
+        if not news.publishers.exists():
             news.delete()
             return Response({'detail': 'News supprimée (dernière université).'},
                             status=status.HTTP_204_NO_CONTENT)
-
-        return Response({'detail': 'Université retirée.'},
-                        status=status.HTTP_200_OK)    
+        return Response({'detail': 'Université(s) retirée(s).'},
+                        status=status.HTTP_200_OK)
 class OldStudentBySlugViewSet(viewsets.ModelViewSet):
-    """CRUD complet filtré sur l’université (slug)"""
     serializer_class = OldStudentSerializer
     permission_classes = [permissions.AllowAny]
 
@@ -485,26 +486,33 @@ class OldStudentBySlugViewSet(viewsets.ModelViewSet):
         return get_object_or_404(Universite, slug=self.kwargs['slug'])
 
     def get_queryset(self):
-        return OldStudent.objects.filter(publisher=self.get_university())
+        return OldStudent.objects.filter(publishers=self.get_university())
 
     def perform_create(self, serializer):
-        # on lie automatiquement au slug de l’URL
-        serializer.save(publisher=self.get_university())
-    from rest_framework.decorators import action    
+        old = serializer.save()
+        univ = self.get_university()
+        old.publishers.add(univ)
+        affiliations = univ.get_universites_meres()
+        meres = [aff.universite_mere for aff in affiliations]
+        if meres:
+            old.publishers.add(*meres)
+
     @action(detail=True, methods=['delete'], url_path='dissociate')
-    def dissociate(self, request, slug=None, pk=None):      
+    def dissociate(self, request, slug=None, pk=None):
         university = self.get_university()
-        oldstudent = self.get_object()
+        old = self.get_object()
 
-        if oldstudent.publisher != university:
-            return Response({'detail': 'Cette université n’est pas la publisher de cette news.'},
-                            status=status.HTTP_403_FORBIDDEN)
+        affiliations = university.get_universites_meres()
+        meres = [aff.universite_mere for aff in affiliations]
+        to_remove = [university] + meres
+        old.publishers.remove(*to_remove)
 
-        # Suppression directe
-        oldstudent.delete()
-        return Response({'detail': 'News supprimée.'}, status=status.HTTP_204_NO_CONTENT)
-
-
+        if not old.publishers.exists():
+            old.delete()
+            return Response({'detail': 'OldStudent supprimé (dernière université).'},
+                            status=status.HTTP_204_NO_CONTENT)
+        return Response({'detail': 'Université(s) retirée(s).'},
+                        status=status.HTTP_200_OK)
 class NewsGlobalViewSet(viewsets.ModelViewSet):
     """CRUD global – on précise l’université dans le payload"""
     queryset = News.objects.all()

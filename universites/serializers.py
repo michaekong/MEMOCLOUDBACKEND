@@ -177,46 +177,36 @@ class UserRoleSerializer(serializers.ModelSerializer):
 # news/serializers.py
 class NewsSerializer(serializers.ModelSerializer):
     cover_url = serializers.SerializerMethodField()
-    publisher_slug = serializers.CharField(source='publisher.slug', read_only=True)
-    
+    publisher_slugs = serializers.SlugRelatedField(
+        source='publishers', many=True, read_only=True, slug_field='slug'
+    )
+
     class Meta:
         model = News
         fields = ['id', 'title', 'slug', 'headline', 'body', 'cover',
                   'cover_url', 'topics', 'is_published', 'publish_at',
-                  'created_at', 'publisher_slug']
-        read_only_fields = ('id', 'slug', 'created_at', 'updated_at')  # ✅ slug en read-only
-        ordering = ['publish_at']
+                  'created_at', 'publisher_slugs']
+        read_only_fields = ('id', 'slug', 'created_at', 'updated_at')
+
     def get_cover_url(self, obj):
         request = self.context.get('request')
         if obj.cover and request:
             return request.build_absolute_uri(obj.cover.url)
         return None
-    
-    def create(self, validated_data):
-        # ✅ Le publisher est automatiquement assigné
-        if 'publisher' not in validated_data:
-            validated_data['publisher'] = self.context['request'].user.roles_universite.first().universite
-        return super().create(validated_data)
 class OldStudentSerializer(serializers.ModelSerializer):
     cover_url = serializers.SerializerMethodField()
-    publisher_slug = serializers.CharField(source='publisher.slug', read_only=True)
-    
+    publisher_slugs = serializers.SlugRelatedField(
+        source='publishers', many=True, read_only=True, slug_field='slug'
+    )
+
     class Meta:
         model = OldStudent
         fields = ['id', 'title', 'body', 'cover',
-                  'cover_url', 
-                  'created_at', 'publisher_slug']
-        read_only_fields = ('id',  'created_at', 'updated_at')  # ✅ slug en read-only
-        
+                  'cover_url', 'created_at', 'publisher_slugs']
+        read_only_fields = ('id', 'created_at', 'updated_at')
+
     def get_cover_url(self, obj):
         request = self.context.get('request')
         if obj.cover and request:
             return request.build_absolute_uri(obj.cover.url)
-        return None
-    
-    def create(self, validated_data):
-        # ✅ Le publisher est automatiquement assigné
-        if 'publisher' not in validated_data:
-            validated_data['publisher'] = self.context['request'].user.roles_universite.first().universite
-        return super().create(validated_data)    
-    
+        return None 

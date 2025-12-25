@@ -139,7 +139,7 @@ class News(models.Model):
     topics = models.CharField(max_length=50, default='general')
     is_published = models.BooleanField(default=True)
     publish_at = models.DateTimeField()
-    publisher = models.ForeignKey('universites.Universite', on_delete=models.CASCADE)
+    publishers = models.ManyToManyField('universites.Universite')  # Changement ici
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -161,7 +161,7 @@ class OldStudent(models.Model):
     cover = models.ImageField(upload_to='oldstudent_covers/', blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    publisher = models.ForeignKey('universites.Universite', on_delete=models.CASCADE)
+    publishers = models.ManyToManyField('universites.Universite')  # Changement ici
     def save(self, *args, **kwargs):
         # ✅ Auto-génération du slug si vide
         super().save(*args, **kwargs)
