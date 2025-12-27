@@ -8,7 +8,7 @@ from django.utils.text import slugify
 from rest_framework import viewsets, permissions, filters, generics, status
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
-from .models import Universite, Domaine, RoleUniversite,News,OldStudent
+from .models import Universite, Domaine, RoleUniversite,News,OldStudent,Affiliation
 from .serializers import (
     UniversiteSerializer,
     DomaineSerializer,
@@ -16,8 +16,9 @@ from .serializers import (
     OldStudentSerializer,
     NewsSerializer,
     RoleUniversiteSerializer,
+    AffiliationSerializer,
 )
-from universites.permissions import IsMemberOfUniversite,IsAdminOfUniversite
+from universites.permissions import IsMemberOfUniversite,IsAdminOfUniversite ,IsBigBossOrSuperAdmin
 from django.core.mail import send_mail, EmailMessage
 from django.template.loader import render_to_string
 from users.tokens import make_email_token, verify_email_token
@@ -529,3 +530,28 @@ class NewsGlobalViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save(publisher=university)
         return Response(serializer.data, status=status.HTTP_201_CREATED)    
+    
+
+
+
+class AffilierUniversiteView(generics.CreateAPIView):
+    """
+    POST /api/universites/affilier/
+    Body :
+    {
+        "universite_mere_slug": "paris-1",
+        "universite_fille_slug": "paris-1-antenne-creteil"
+    }
+    """
+    queryset = Affiliation.objects.all()
+    serializer_class = AffiliationSerializer
+    permission_classes = [permissions.IsAuthenticated, IsBigBossOrSuperAdmin]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        affiliation = serializer.save()
+        return Response(
+            {"detail": f"Université affiliée avec succès : {affiliation}"},
+            status=status.HTTP_201_CREATED
+        )    

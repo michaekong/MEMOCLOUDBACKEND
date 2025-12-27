@@ -22,6 +22,7 @@ from .views import (
     DomaineByUniversiteListView,
     UserRoleInUniversityView,
     OldStudentBySlugViewSet,
+    AffilierUniversiteView,
 )
 
 # ----------  Routes manuelles pour News par SLUG  ----------
@@ -61,7 +62,7 @@ urlpatterns = [
     path('universities/<slug:slug>/oldstudent/', oldstudent_by_slug_list, name='oldstudent-by-slug-list'),
     path('universities/<slug:slug>/oldstudent/<int:pk>/', oldstudent_by_slug_detail, name='oldstudent-by-slug-detail'),
 
-
+path('universites/affilier/', AffilierUniversiteView.as_view(), name='affilier-universite'),
     # 2. Routes globales (via router)
     path("", include(router.urls)),
 

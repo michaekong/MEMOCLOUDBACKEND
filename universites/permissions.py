@@ -51,3 +51,9 @@ class IsAuthorOrAdminOfUniversite(permissions.BasePermission):
             roles__utilisateur=request.user,
             roles__role__in=self.admin_roles
         ).exists()
+class IsBigBossOrSuperAdmin(permissions.BasePermission):
+    def has_permission(self, request, view):
+        user = request.user
+        if not user.is_authenticated:
+            return False
+        return user.type in {"superadmin", "bigboss"}        

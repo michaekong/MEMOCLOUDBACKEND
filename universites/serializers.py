@@ -2,7 +2,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.utils.text import slugify
-from .models import Universite, Domaine, RoleUniversite, News,OldStudent
+from .models import Universite, Domaine, RoleUniversite, News,OldStudent ,Affiliation
 import unicodedata
 from users.serializers import RegisterSerializer
 User = get_user_model()
@@ -210,3 +210,62 @@ class OldStudentSerializer(serializers.ModelSerializer):
         if obj.cover and request:
             return request.build_absolute_uri(obj.cover.url)
         return None 
+class AffiliationSerializer(serializers.ModelSerializer):
+    universite_mere_slug = serializers.SlugField(write_only=True)
+    universite_fille_slug = serializers.SlugField(write_only=True)
+
+    class Meta:
+        model = Affiliation
+        fields = ["universite_mere_slug", "universite_fille_slug"]
+
+    def validate(self, attrs):
+        mere = Universite.objects.filter(slug=attrs["universite_mere_slug"]).first()
+        fille = Universite.objects.filter(slug=attrs["universite_fille_slug"]).first()
+
+        if not mere:
+            raise serializers.ValidationError({"universite_mere_slug": "Université mère inconnue."})
+        if not fille:
+            raise serializers.ValidationError({"universite_fille_slug": "Université fille inconnue."})
+        if mere == fille:
+            raise serializers.ValidationError("Une université ne peut s'affilier à elle-même.")
+
+        if Affiliation.objects.filter(universite_mere=fille, universite_affiliee=mere).exists():
+            raise serializers.ValidationError("Ces universités sont déjà liées dans l'autre sens.")
+
+        attrs["mere"] = mere
+        attrs["fille"] = fille
+        return attrs
+
+    def create(self, validated_data):
+        mere = validated_data["mere"]
+        fille = validated_data["fille"]
+
+        # 1) Créer / récupérer l’affiliation
+        affiliation, _ = Affiliation.objects.get_or_create(
+            universite_mere=mere,
+            universite_affiliee=fille,
+            defaults={"date_fin": None}
+        )
+
+        # 2) Copier les RoleUniversite fille → mère (sans doublon)
+        for role in RoleUniversite.objects.filter(universite=fille):
+            RoleUniversite.objects.get_or_create(
+                utilisateur=role.utilisateur,
+                universite=mere,
+                defaults={"role": role.role}
+            )
+
+        # 3) Ajouter l’université mère à tous les objets liés à la fille
+        for memoire in fille.memoires.all():
+            memoire.universites.add(mere)
+
+        for news in fille.news.all():
+            news.publishers.add(mere)
+
+        for old in fille.oldstudent.all():
+            old.publishers.add(mere)
+
+        for domaine in fille.domaines.all():
+            domaine.universites.add(mere)
+
+        return affiliation
