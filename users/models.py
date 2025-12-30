@@ -116,9 +116,11 @@ class InvitationCode(models.Model):
         related_name="codes_used",
     )
     created_at = models.DateTimeField(auto_now_add=True)
-    expires_at = models.DateTimeField(
-        default=timezone.now() + timezone.timedelta(days=7)
-    )
+
+    def default_expiration():
+        return timezone.now() + timezone.timedelta(days=7)
+    
+    expires_at = models.DateTimeField(default=default_expiration)
 
     class Meta:
         ordering = ["-created_at"]
