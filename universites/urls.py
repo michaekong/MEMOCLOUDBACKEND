@@ -22,7 +22,7 @@ from .views import (
     DomaineByUniversiteListView,
     UserRoleInUniversityView,
     OldStudentBySlugViewSet,
-    AffilierUniversiteView,
+    AffilierUniversiteView
 )
 
 # ----------  Routes manuelles pour News par SLUG  ----------
@@ -61,9 +61,7 @@ urlpatterns = [
     path('universities/<slug:slug>/news/<int:pk>/', news_by_slug_detail, name='news-by-slug-detail'),
     path('universities/<slug:slug>/oldstudent/', oldstudent_by_slug_list, name='oldstudent-by-slug-list'),
     path('universities/<slug:slug>/oldstudent/<int:pk>/', oldstudent_by_slug_detail, name='oldstudent-by-slug-detail'),
-
-path('universites/affilier/', AffilierUniversiteView.as_view(), name='affilier-universite'),
-    # 2. Routes globales (via router)
+   # 2. Routes globales (via router)
     path("", include(router.urls)),
 
     # 3. Autres routes existantes
@@ -81,6 +79,8 @@ path('universites/affilier/', AffilierUniversiteView.as_view(), name='affilier-u
     path('domaines/suggest/', DomaineSuggestView.as_view(), name='domaine-suggest'),
  path("auth/<str:univ_slug>/my-role/", UserRoleInUniversityView.as_view(), name="user-role-in-university"),
  
+path('affilier/', AffilierUniversiteView.as_view(), name='affilier-universite'),
+ 
 
     # ... autres patterns ...
     path(
@@ -90,4 +90,4 @@ path('universites/affilier/', AffilierUniversiteView.as_view(), name='affilier-u
     ),
 
     path("auth/universities/<str:univ_slug>/user-role/<int:user_id>/", UserRoleInUniversityByIdView.as_view(), name="user-role-in-university-by-id"),
-]
+]  

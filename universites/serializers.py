@@ -241,13 +241,13 @@ class AffiliationSerializer(serializers.ModelSerializer):
         fille = validated_data["fille"]
 
         # 1) Créer / récupérer l’affiliation
-        affiliation, _ = Affiliation.objects.get_or_create(
+        affiliation, created = Affiliation.objects.get_or_create(
             universite_mere=mere,
             universite_affiliee=fille,
             defaults={"date_fin": None}
         )
 
-        # 2) Copier les RoleUniversite fille → mère (sans doublon)
+        # 2) Copier les rôles « fille → mère » (sans doublon)
         for role in RoleUniversite.objects.filter(universite=fille):
             RoleUniversite.objects.get_or_create(
                 utilisateur=role.utilisateur,
@@ -255,17 +255,24 @@ class AffiliationSerializer(serializers.ModelSerializer):
                 defaults={"role": role.role}
             )
 
-        # 3) Ajouter l’université mère à tous les objets liés à la fille
+        # 3) Propager l’université mère aux objets liés
+        # 3-a  Mémoires (ManyToMany « universites », related_name="memoires")
         for memoire in fille.memoires.all():
             memoire.universites.add(mere)
 
-        for news in fille.news.all():
-            news.publishers.add(mere)
-
-        for old in fille.oldstudent.all():
-            old.publishers.add(mere)
-
+        # 3-b  Domaines (ManyToMany « universites », related_name="domaines")
         for domaine in fille.domaines.all():
             domaine.universites.add(mere)
+
+                # 3-c  News
+        for news in News.objects.filter(publishers=fille):
+            news.publishers.add(mere)
+
+        # 3-d  OldStudent
+        for old in OldStudent.objects.filter(publishers=fille):
+            old.publishers.add(mere)
+
+        # (Pas d'attribut « encadrements », « signalements », « notations » côté Universite
+        #  => rien à boucler dessus.)
 
         return affiliation
