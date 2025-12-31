@@ -48,15 +48,12 @@ jobs:
 
       - name: Copy project to VPS with improved rsync
         run: |
-          rsync -avz --no-perms --no-owner --no-group \
-            --exclude '.git' \
-            --exclude 'node_modules' \
-            --exclude '__pycache__' \
-            --exclude '*.pyc' \
-            --exclude '.DS_Store' \
-            --exclude '*.sqlite3' \
-            -e "ssh -o StrictHostKeyChecking=no" \
-            ./ ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ secrets.VPS_PATH}}/
+          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+            cd ${{ secrets.VPS_PATH }} &&
+            git fetch --all &&
+            git reset --hard origin/main
+          "
+
 
       - name: Set proper permissions on VPS
         run: |
@@ -74,3 +71,10 @@ jobs:
             docker compose down &&
             docker compose up -d --build
           "
+      
+      - name: Run Django migrations
+        run: |
+            ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+              cd ${{ secrets.VPS_PATH }} &&
+              docker compose exec web python manage.py migrate --noinput
+            "
