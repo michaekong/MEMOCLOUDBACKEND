@@ -48,8 +48,7 @@ jobs:
 
       - name: Copy project to VPS with improved rsync
         run: |
-            rsync -avz --delete \
-              --no-perms --no-owner --no-group \
+            rsync -avz --no-perms --no-owner --no-group \
               --exclude '.git' \
               --exclude 'node_modules' \
               --exclude '__pycache__' \
