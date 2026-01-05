@@ -294,3 +294,175 @@ class AuteurDashboardView(generics.GenericAPIView):
                 ),
             }
         )
+# memoires/views.py
+from django.db.models import Count, Avg, Q, Sum
+from rest_framework import generics, permissions
+from rest_framework.response import Response
+from django.shortcuts import get_object_or_404
+from universites.models import Universite
+from users.models import CustomUser
+from memoires.models import Memoire
+
+class UserUniversiteStatsView(generics.GenericAPIView):
+    """
+    GET /api/universites/<univ_slug>/users-stats/
+    
+    Retourne les statistiques complètes à 360° pour chaque utilisateur 
+    de l'université concerné par au moins un mémoire (auteur ou encadreur).
+    """
+    permission_classes = [permissions.AllowAny]  # ou IsAdminOfUniversite selon besoin
+
+    def get(self, request, univ_slug):
+        universite = get_object_or_404(Universite, slug=univ_slug)
+        
+        # Récupérer tous les mémoires de l'université
+        memoires_univ = Memoire.objects.filter(universites=universite)
+        
+        # Récupérer tous les utilisateurs concernés (auteurs + encadreurs)
+        users_auteurs = memoires_univ.values_list('auteur_id', flat=True).distinct()
+        users_encadreurs = memoires_univ.values('encadrements__encadreur_id').distinct()
+        users_encadreurs_ids = [u['encadrements__encadreur_id'] for u in users_encadreurs if u['encadrements__encadreur_id']]
+        
+        all_user_ids = set(users_auteurs) | set(users_encadreurs_ids)
+        
+        users_stats = []
+        
+        for user_id in all_user_ids:
+            user = CustomUser.objects.get(id=user_id)
+            
+            # Mémoires dont l'user est auteur dans cette université
+            memoires_auteur = memoires_univ.filter(auteur=user)
+            
+            # Mémoires dont l'user est encadreur dans cette université
+            memoires_encadres = memoires_univ.filter(encadrements__encadreur=user)
+            
+            # Tous les mémoires liés à l'user
+            memoires_lies = (memoires_auteur | memoires_encadres).distinct()
+            
+            # --- STATISTIQUES GLOBALES ---
+            total_memoires_auteur = memoires_auteur.count()
+            total_memoires_encadres = memoires_encadres.count()
+            total_memoires_lies = memoires_lies.count()
+            
+            # --- TÉLÉCHARGEMENTS ---
+            total_telechargements = sum(m.nb_telechargements() for m in memoires_lies)
+            
+            # --- LIKES ---
+            total_likes = sum(m.likes.count() for m in memoires_lies)
+            
+            # --- COMMENTAIRES ---
+            total_commentaires = sum(m.commentaires.filter(modere=False).count() for m in memoires_lies)
+            
+            # --- NOTATIONS ---
+            notes = []
+            for m in memoires_lies:
+                note_moy = m.note_moyenne()
+                if note_moy > 0:
+                    notes.append(note_moy)
+            
+            note_moyenne_globale = round(sum(notes) / len(notes), 2) if notes else 0
+            total_notations = sum(m.notations.count() for m in memoires_lies)
+            
+            # --- DÉTAILS PAR MÉMOIRE ---
+            memoires_details = []
+            for memoire in memoires_lies:
+                role = []
+                if memoire in memoires_auteur:
+                    role.append("auteur")
+                if memoire in memoires_encadres:
+                    role.append("encadreur")
+                
+                memoires_details.append({
+                    "id": memoire.id,
+                    "titre": memoire.titre,
+                    "annee": memoire.annee,
+                    "role": ", ".join(role),
+                    "nb_telechargements": memoire.nb_telechargements(),
+                    "nb_likes": memoire.likes.count(),
+                    "nb_commentaires": memoire.commentaires.filter(modere=False).count(),
+                    "note_moyenne": memoire.note_moyenne(),
+                    "nb_notations": memoire.notations.count(),
+                })
+            
+            # --- STATISTIQUES PAR DOMAINE ---
+            domaines_stats = {}
+            for memoire in memoires_lies:
+                for domaine in memoire.domaines.all():
+                    if domaine.nom not in domaines_stats:
+                        domaines_stats[domaine.nom] = {
+                            "nb_memoires": 0,
+                            "telechargements": 0,
+                            "likes": 0,
+                            "commentaires": 0,
+                        }
+                    domaines_stats[domaine.nom]["nb_memoires"] += 1
+                    domaines_stats[domaine.nom]["telechargements"] += memoire.nb_telechargements()
+                    domaines_stats[domaine.nom]["likes"] += memoire.likes.count()
+                    domaines_stats[domaine.nom]["commentaires"] += memoire.commentaires.filter(modere=False).count()
+            
+            # --- STATISTIQUES PAR ANNÉE ---
+            annees_stats = {}
+            for memoire in memoires_lies:
+                annee = memoire.annee
+                if annee not in annees_stats:
+                    annees_stats[annee] = {
+                        "nb_memoires": 0,
+                        "telechargements": 0,
+                        "likes": 0,
+                    }
+                annees_stats[annee]["nb_memoires"] += 1
+                annees_stats[annee]["telechargements"] += memoire.nb_telechargements()
+                annees_stats[annee]["likes"] += memoire.likes.count()
+            
+            # --- TOP MÉMOIRES (par téléchargements) ---
+            top_memoires = sorted(
+                memoires_details, 
+                key=lambda x: x["nb_telechargements"], 
+                reverse=True
+            )[:5]
+            
+            # --- ASSEMBLAGE FINAL ---
+            users_stats.append({
+                "utilisateur": {
+                    "id": user.id,
+                    "nom": user.nom,
+                    "prenom": user.prenom,
+                    "email": user.email,
+                    "type": user.type,
+                    "photo_profil": request.build_absolute_uri(user.photo_profil.url) if user.photo_profil else None,
+                    "linkedin": user.realisation_linkedin,
+                },
+                "statistiques_globales": {
+                    "total_memoires_auteur": total_memoires_auteur,
+                    "total_memoires_encadres": total_memoires_encadres,
+                    "total_memoires_lies": total_memoires_lies,
+                    "total_telechargements": total_telechargements,
+                    "total_likes": total_likes,
+                    "total_commentaires": total_commentaires,
+                    "total_notations": total_notations,
+                    "note_moyenne_globale": note_moyenne_globale,
+                },
+                "memoires_details": memoires_details,
+                "top_memoires": top_memoires,
+                "statistiques_par_domaine": [
+                    {"domaine": k, **v} for k, v in domaines_stats.items()
+                ],
+                "statistiques_par_annee": [
+                    {"annee": k, **v} for k, v in sorted(annees_stats.items(), reverse=True)
+                ],
+            })
+        
+        # Tri des utilisateurs par nombre total de téléchargements (décroissant)
+        users_stats.sort(
+            key=lambda x: x["statistiques_globales"]["total_telechargements"], 
+            reverse=True
+        )
+        
+        return Response({
+            "universite": {
+                "slug": universite.slug,
+                "nom": universite.nom,
+            },
+            "total_utilisateurs": len(users_stats),
+            "utilisateurs_stats": users_stats,
+        })        
