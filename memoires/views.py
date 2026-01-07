@@ -378,6 +378,7 @@ class UserUniversiteStatsView(generics.GenericAPIView):
                 memoires_details.append({
                     "id": memoire.id,
                     "titre": memoire.titre,
+                    "pdf_url": memoire.fichier_pdf.url if memoire.fichier_pdf else None,
                     "annee": memoire.annee,
                     "role": ", ".join(role),
                     "nb_telechargements": memoire.nb_telechargements(),
