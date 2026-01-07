@@ -8,6 +8,7 @@ from .views import (
     AuteurDashboardView,
     CommentaireListView,
     MemoirePreviewImageView,
+    UserUniversiteStatsView,
 )
 
 router = DefaultRouter()
@@ -20,6 +21,9 @@ urlpatterns = [
     path('universites/<slug:univ_slug>/memoires/<int:pk>/preview/image/', MemoirePreviewImageView.as_view(), name='memoire-preview-image'),
     path('universites/<slug:univ_slug>/memoires/<int:pk>/encadrer/', MemoireEncadrementView.as_view(), name='memoire-encadrement'),
     path('universites/<slug:univ_slug>/', include(router.urls)),
+     path('universites/<slug:univ_slug>/users-stats/', 
+         UserUniversiteStatsView.as_view(), 
+         name='users-stats-universite'),
      path('universites/<slug:univ_slug>/stats/', UniversiteMemoireViewSet.as_view({'get': 'stats'}), name='univ-memoire-stats'),
     path(
         "universites/<str:univ_slug>/memoires/<int:memoire_id>/commentaires/",

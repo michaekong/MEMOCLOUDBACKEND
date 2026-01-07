@@ -397,20 +397,31 @@ class UserViewSet(viewsets.ModelViewSet):
 
 
 # users/views.py
+from django_filters import rest_framework as df_filters
+from django_filters.filters import CharFilter
+
+class UserFilter(df_filters.FilterSet):
+    role = CharFilter(field_name="roles_univ__role", lookup_expr="iexact")
+
+    class Meta:
+        model = User
+        fields = ["roles_univ__role"]
+
 class UniversiteUsersListView(generics.ListAPIView):
-    serializer_class = UserSerializer
+    serializer_class = UserSerializer   # tu peux garder le tien
     permission_classes = [permissions.IsAuthenticated]
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    filter_backends = [
+        filters.SearchFilter,
+        filters.OrderingFilter,
+        df_filters.DjangoFilterBackend,   # <-- ajout
+    ]
+    filterset_class = UserFilter         # <-- ajout
     search_fields = ["nom", "prenom", "email"]
     ordering_fields = ["date_joined", "nom"]
 
     def get_queryset(self):
         univ = get_object_or_404(Universite, slug=self.kwargs["univ_slug"])
-        users=User.objects.filter(roles_univ__universite=univ).distinct()
-        for el in users :
-            print(el.email)
         return User.objects.filter(roles_univ__universite=univ).distinct()
-
 
 class UniversiteUserAddView(GenericAPIView):
     permission_classes = [IsAdminInUniversite]  # Vérifie que l'utilisateur est admin

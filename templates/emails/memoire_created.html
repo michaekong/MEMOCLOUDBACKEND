@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>
+        {% if destinataire_type == "auteur" %}
+            Mémoire publié
+        {% else %}
+            Mémoire encadré publié
+        {% endif %}
+    </title>
+    <style>
+        body { font-family: 'Roboto', sans-serif; margin: 0; padding: 20px; background-color: #f5f7fa; }
+        .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .header { background: linear-gradient(135deg, #ffb606, #ff8f00); padding: 30px; text-align: center; color: white; }
+        .content { padding: 30px; }
+        .memoire-card { background: #f8f9fa; border-radius: 8px; padding: 20px; margin: 20px 0; border-left: 4px solid #ffb606; }
+        .stats { background: #e8f5e8; border-radius: 8px; padding: 15px; margin: 20px 0; text-align: center; }
+        .footer { background: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666; }
+        .button { display: inline-block; background: #ffb606; color: #1a1a1a; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; margin: 10px 0; }
+        .role-badge { display: inline-block; background: #ffb606; color: white; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; text-transform: uppercase; }
+        .domaine-tag { display: inline-block; background: #e3f2fd; color: #1976d2; padding: 4px 8px; border-radius: 4px; font-size: 11px; margin: 2px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>
+                {% if destinataire_type == "auteur" %}
+                    🎓 Félicitations ! Votre mémoire est publié
+                {% else %}
+                    📚 Mémoire encadré publié
+                {% endif %}
+            </h1>
+        </div>
+        
+        <div class="content">
+            <p>Bonjour <strong>{{ destinataire_nom }}</strong>,</p>
+            
+            {% if destinataire_type == "auteur" %}
+                <p>Nous sommes ravis de vous informer que votre mémoire vient d'être publié sur notre plateforme.</p>
+            {% else %}
+                <p>Le mémoire de <strong>{{ auteur_nom }}</strong> que vous avez encadré vient d'être publié sur notre plateforme.</p>
+            {% endif %}
+            
+            <div class="memoire-card">
+                <h3>Détails du mémoire :</h3>
+                <ul>
+                    <li><strong>Titre :</strong> {{ memoire_titre }}</li>
+                    <li><strong>Année :</strong> {{ memoire_annee }}</li>
+                    <li><strong>Auteur :</strong> {{ auteur_nom }}</li>
+                    {% if domaines %}
+                    <li><strong>Domaines :</strong> 
+                        {% for domaine in domaines %}
+                            <span class="domaine-tag">{{ domaine }}</span>
+                        {% endfor %}
+                    </li>
+                    {% endif %}
+                    <li><strong>Date de publication :</strong> {{ date_creation }}</li>
+                </ul>
+            </div>
+            
+            <div class="stats">
+                <p><strong>Disponibilité :</strong> Le mémoire est maintenant accessible à toute la communauté académique.</p>
+            </div>
+            
+            {% if destinataire_type == "auteur" %}
+                <p>Votre travail est maintenant visible et peut être consulté par les étudiants, chercheurs et professionnels.</p>
+            {% else %}
+                <p>Le travail que vous avez encadré est maintenant visible et peut être consulté par la communauté académique.</p>
+            {% endif %}
+            
+            <p>Pour consulter votre mémoire et voir ses statistiques, connectez-vous à votre espace personnel.</p>
+            
+            <div style="text-align: center; margin: 20px 0;">
+                <a href="{{ frontend_url }}" class="button">Accéder à mon espace</a>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>Ceci est un email automatique. Merci de ne pas y répondre.</p>
+            <p>© 2024 Bibliothèque des Mémoires ENSTP - Tous droits réservés</p>
+        </div>
+    </div>
+</body>
+</html>

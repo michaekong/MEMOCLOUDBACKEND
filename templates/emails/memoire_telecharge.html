@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>
+        {% if destinataire_type == "auteur" %}
+            Votre mémoire a été téléchargé
+        {% else %}
+            Mémoire encadré téléchargé
+        {% endif %}
+    </title>
+    <style>
+        body { font-family: 'Roboto', sans-serif; margin: 0; padding: 20px; background-color: #f5f7fa; }
+        .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .header { background: linear-gradient(135deg, #ffb606, #ff8f00); padding: 30px; text-align: center; color: white; }
+        .content { padding: 30px; }
+        .memoire-card { background: #f8f9fa; border-radius: 8px; padding: 20px; margin: 20px 0; border-left: 4px solid #ffb606; }
+        .stats { background: #e8f5e8; border-radius: 8px; padding: 15px; margin: 20px 0; text-align: center; }
+        .footer { background: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666; }
+        .button { display: inline-block; background: #ffb606; color: #1a1a1a; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; margin: 10px 0; }
+        .role-badge { display: inline-block; background: #ffb606; color: white; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; text-transform: uppercase; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>
+                {% if destinataire_type == "auteur" %}
+                    📚 Votre mémoire vient d'être téléchargé !
+                {% else %}
+                    📖 Mémoire encadré téléchargé !
+                {% endif %}
+            </h1>
+        </div>
+        
+        <div class="content">
+            <p>Bonjour <strong>{{ destinataire_nom }}</strong>,</p>
+            
+            {% if destinataire_type == "auteur" %}
+                <p>Nous sommes heureux de vous informer que votre mémoire vient d'être téléchargé par un utilisateur.</p>
+            {% else %}
+                <p>Le mémoire de <strong>{{ auteur_nom }}</strong> que vous encadrez vient d'être téléchargé par un utilisateur.</p>
+            {% endif %}
+            
+            <div class="memoire-card">
+                <h3>Détails du téléchargement :</h3>
+                <ul>
+                    <li><strong>Mémoire :</strong> {{ memoire_titre }}</li>
+                    <li><strong>Téléchargé par :</strong> {{ telechargeur_nom }} <span class="role-badge">Étudiant</span></li>
+                    <li><strong>Email du téléchargeur :</strong> {{ telechargeur_email }}</li>
+                    <li><strong>Date :</strong> {{ date_telechargement }}</li>
+                </ul>
+            </div>
+            
+            <div class="stats">
+                <p><strong>Statistiques :</strong> Ce mémoire a été téléchargé <strong>{{ nombre_total_telechargements }} fois</strong> au total.</p>
+            </div>
+            
+            {% if destinataire_type == "auteur" %}
+                <p>C'est une excellente nouvelle ! Cela montre que votre travail est utile et intéressant pour la communauté académique.</p>
+            {% else %}
+                <p>C'est une excellente nouvelle ! Cela montre que le travail que vous avez encadré est utile et apprécié par la communauté académique.</p>
+            {% endif %}
+            
+            <p>Pour consulter les statistiques détaillées, connectez-vous à votre espace personnel.</p>
+            
+            <div style="text-align: center; margin: 20px 0;">
+                <a href="{{ frontend_url }}" class="button">Accéder à mon espace</a>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>Ceci est un email automatique. Merci de ne pas y répondre.</p>
+            <p>© 2024 Bibliothèque des Mémoires ENSTP - Tous droits réservés</p>
+        </div>
+    </div>
+</body>
+</html> 

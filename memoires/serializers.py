@@ -4,7 +4,13 @@ from universites.models import Domaine, Universite
 from users.serializers import UserSerializer
 from interactions.models import Commentaire, Telechargement
 from users.models import CustomUser
+from django.core.mail import EmailMessage
+from django.template.loader import render_to_string
+from django.conf import settings
+from django.utils import timezone
+import logging
 
+logger = logging.getLogger(__name__)
 
 # memoires/serializers.py  (ou interactions/serializers.py)
 
@@ -245,12 +251,94 @@ class MemoireUniversiteCreateSerializer(serializers.ModelSerializer):
                     ).values_list("encadreur_id", flat=True)
                 )
                 to_create = [uid for uid in encadreurs_ids if uid not in existing]
+                encadrements = [
+                    Encadrement(memoire=memoire, encadreur_id=uid) 
+                    for uid in to_create
+                ]
                 Encadrement.objects.bulk_create(
-                    [Encadrement(memoire=memoire, encadreur_id=uid) for uid in to_create],
+                    encadrements,
                     ignore_conflicts=True
                 )
 
+            # 3. Envoyer les emails de notification
+            self.envoyer_email_creation(memoire)
+
             return memoire
+
+    def envoyer_email_creation(self, memoire):
+        """Envoie un email à l'auteur et aux encadreurs pour les informer de la création du mémoire."""
+        try:
+            auteur = memoire.auteur
+            auteur_nom = f"{auteur.prenom} {auteur.nom}" if auteur.prenom and auteur.nom else auteur.email
+            
+            # Contexte commun pour tous les destinataires
+            context = {
+                "memoire_titre": memoire.titre,
+                "memoire_annee": memoire.annee,
+                "auteur_nom": auteur_nom,
+                "auteur_email": auteur.email,
+                "date_creation": timezone.now().strftime("%d/%m/%Y à %H:%M"),
+                "frontend_url": settings.FRONTEND_URL,
+                "domaines": [d.nom for d in memoire.domaines.all()],
+            }
+            
+            # 1. Envoyer à l'auteur
+            context_auteur = {
+                **context,
+                "destinataire_type": "auteur",
+                "destinataire_nom": auteur_nom,
+            }
+            
+            self.envoyer_email_destinataire(
+                auteur.email,
+                context_auteur,
+                "Votre mémoire a été publié avec succès 🎓"
+            )
+            
+            # 2. Envoyer aux encadreurs
+            encadreurs = CustomUser.objects.filter(id__in=memoire.encadrements.values_list('encadreur_id', flat=True))
+            for encadreur in encadreurs:
+                encadreur_nom = f"{encadreur.prenom} {encadreur.nom}" if encadreur.prenom and encadreur.nom else encadreur.email
+                
+                context_encadreur = {
+                    **context,
+                    "destinataire_type": "encadreur",
+                    "destinataire_nom": encadreur_nom,
+                }
+                
+                self.envoyer_email_destinataire(
+                    encadreur.email,
+                    context_encadreur,
+                    "Un mémoire que vous encadrez vient d'être publié 📚"
+                )
+                
+        except Exception as e:
+            logger.error(f"Erreur lors de l'envoi des emails de création de mémoire: {str(e)}")
+            # Ne pas bloquer la création du mémoire en cas d'erreur d'email
+
+    def envoyer_email_destinataire(self, email_destinataire, context, sujet):
+        """Envoie un email individuel à un destinataire."""
+        try:
+            # Rendu du template HTML
+            html_content = render_to_string(
+                "emails/memoire_created.html", 
+                context
+            )
+            
+            # Création et envoi de l'email
+            email = EmailMessage(
+                subject=sujet,
+                body=html_content,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                to=[email_destinataire],
+            )
+            email.content_subtype = "html"
+            email.send(fail_silently=False)
+            
+            logger.info(f"Email de création de mémoire envoyé à {email_destinataire} ({context['destinataire_type']}) pour le mémoire {context['memoire_titre']}")
+            
+        except Exception as e:
+            logger.error(f"Erreur lors de l'envoi de l'email à {email_destinataire}: {str(e)}")
 
     def update(self, instance, validated_data, **kwargs):
         domaines_slugs = validated_data.pop("domaines_slugs", None)
@@ -278,8 +366,6 @@ class MemoireUniversiteCreateSerializer(serializers.ModelSerializer):
                 Encadrement.objects.bulk_create(encadrements, ignore_conflicts=True)
 
         return instance
-
-
 class EncadrementAddSerializer(serializers.Serializer):
     encadreur_id = serializers.IntegerField(
         help_text="ID utilisateur à ajouter comme encadreur"
