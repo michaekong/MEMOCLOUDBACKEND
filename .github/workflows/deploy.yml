@@ -86,5 +86,5 @@ jobs:
         run: |
             ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
               cd ${{ secrets.VPS_PATH }} &&
-              docker compose exec web python manage.py migrate --noinput
+              docker compose exec api python manage.py migrate --noinput
             "
