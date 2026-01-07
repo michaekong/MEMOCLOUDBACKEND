@@ -48,12 +48,16 @@ jobs:
 
       - name: Copy project to VPS with improved rsync
         run: |
-          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
-            cd ${{ secrets.VPS_PATH }} &&
-            git fetch --all &&
-            git reset --hard origin/main
-          "
-
+            rsync -avz --delete \
+              --no-perms --no-owner --no-group \
+              --exclude '.git' \
+              --exclude 'node_modules' \
+              --exclude '__pycache__' \
+              --exclude '*.pyc' \
+              --exclude '.DS_Store' \
+              --exclude '*.sqlite3' \
+              -e "ssh -o StrictHostKeyChecking=no" \
+              ./ ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ secrets.VPS_PATH}}/
 
       - name: Set proper permissions on VPS
         run: |

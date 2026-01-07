@@ -25,6 +25,7 @@ ALLOWED_HOSTS = [
     "127.0.0.1",
     "memocloudfront.vercel.app",
     "camsecplots.netlify.app",
+    "213.199.41.196:8009"
 ]
 
 # ALLOWED_HOSTS = ['*']
