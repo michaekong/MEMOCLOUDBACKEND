@@ -28,7 +28,13 @@ from interactions.serializers import (
     SignalementCreateSerializer,
     SignalementListSerializer,
 )
+from django.template.loader import render_to_string
+from django.core.mail import EmailMessage
+from django.conf import settings
+from django.utils import timezone
+import logging
 
+logger = logging.getLogger(__name__)
 
 from memoires.models import Memoire, Notation, Signalement
 from interactions.permissions import IsAuthenticated, IsAdminOrModerateur
@@ -53,6 +59,8 @@ class TelechargementOpenViewSet(viewsets.ViewSet):
     @action(detail=False, methods=["post"], url_path="telecharger")
     def telecharger(self, request):
         memoire = get_object_or_404(Memoire, pk=request.data.get("memoire"))
+        
+        # Vérifier si c'est la première fois que cet utilisateur télécharge ce mémoire
         telechargement, created = Telechargement.objects.get_or_create(
             utilisateur=request.user,
             memoire=memoire,
@@ -61,8 +69,13 @@ class TelechargementOpenViewSet(viewsets.ViewSet):
                 "user_agent": request.META.get("HTTP_USER_AGENT", "")[:500],
             },
         )
+        
         if not created:
             return Response({"detail": "Déjà téléchargé"}, status=status.HTTP_200_OK)
+        
+        # Envoyer l'email à l'auteur et aux encadreurs uniquement lors du premier téléchargement
+        self.envoyer_email_notification(memoire, request.user)
+        
         return Response(
             {
                 "detail": "Téléchargement enregistré",
@@ -71,6 +84,97 @@ class TelechargementOpenViewSet(viewsets.ViewSet):
             status=status.HTTP_201_CREATED,
         )
 
+    def envoyer_email_notification(self, memoire, telechargeur):
+        """Envoie un email à l'auteur et aux encadreurs du mémoire pour les informer du téléchargement."""
+        try:
+            # Préparer les données communes
+            telechargeur_nom = f"{telechargeur.prenom} {telechargeur.nom}" if telechargeur.prenom and telechargeur.nom else telechargeur.email
+            
+            context = {
+                "memoire_titre": memoire.titre,
+                "telechargeur_nom": telechargeur_nom,
+                "telechargeur_email": telechargeur.email,
+                "date_telechargement": timezone.now().strftime("%d/%m/%Y à %H:%M"),
+                "nombre_total_telechargements": memoire.nb_telechargements(),
+                "frontend_url": settings.FRONTEND_URL,
+            }
+            
+            # 1. Envoyer à l'auteur
+            auteur = memoire.auteur
+            context_auteur = {
+                **context,
+                "destinataire_type": "auteur",
+                "destinataire_nom": f"{auteur.prenom} {auteur.nom}" if auteur.prenom and auteur.nom else auteur.email,
+            }
+            
+            self.envoyer_email_destinataire(
+                auteur.email, 
+                context_auteur, 
+                "Votre mémoire vient d'être téléchargé 📚"
+            )
+            
+            # 2. Envoyer aux encadreurs
+            encadrements = memoire.encadrements.select_related('encadreur').all()
+            for encadrement in encadrements:
+                encadreur = encadrement.encadreur
+                context_encadreur = {
+                    **context,
+                    "destinataire_type": "encadreur",
+                    "destinataire_nom": f"{encadreur.prenom} {encadreur.nom}" if encadreur.prenom and encadreur.nom else encadreur.email,
+                    "auteur_nom": f"{auteur.prenom} {auteur.nom}" if auteur.prenom and auteur.nom else auteur.email,
+                }
+                
+                self.envoyer_email_destinataire(
+                    encadreur.email,
+                    context_encadreur,
+                    "Un mémoire que vous encadrez vient d'être téléchargé 📖"
+                )
+            
+        except Exception as e:
+            logger.error(f"Erreur lors de l'envoi des emails de notification: {str(e)}")
+            # Ne pas bloquer le téléchargement en cas d'erreur d'email
+
+    def envoyer_email_destinataire(self, email_destinataire, context, sujet):
+        """Envoie un email individuel à un destinataire."""
+        try:
+            # Rendu du template HTML
+            html_content = render_to_string(
+                "emails/memoire_telecharge.html", 
+                context
+            )
+            
+            # Création et envoi de l'email
+            email = EmailMessage(
+                subject=sujet,
+                body=html_content,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                to=[email_destinataire],
+            )
+            email.content_subtype = "html"
+            email.send(fail_silently=False)
+            
+            logger.info(f"Email de notification envoyé à {email_destinataire} ({context['destinataire_type']}) pour le téléchargement du mémoire {context['memoire_titre']}")
+            
+        except Exception as e:
+            logger.error(f"Erreur lors de l'envoi de l'email à {email_destinataire}: {str(e)}")
+
+    @extend_schema(responses={200: TelechargementListSerializer(many=True)})
+    @action(detail=False, methods=["get"], url_path="mes-telechargements")
+    def mes_telechargements(self, request):
+        qs = Telechargement.objects.filter(utilisateur=request.user).select_related(
+            "memoire"
+        )
+        serializer = TelechargementListSerializer(qs, many=True)
+        return Response(serializer.data)
+
+    @extend_schema(responses={200: TelechargementListSerializer(many=True)})
+    @action(detail=False, methods=["get"], url_path="mes-telechargements")
+    def mes_telechargements(self, request):
+        qs = Telechargement.objects.filter(utilisateur=request.user).select_related(
+            "memoire"
+        )
+        serializer = TelechargementListSerializer(qs, many=True)
+        return Response(serializer.data)
     @extend_schema(responses={200: TelechargementListSerializer(many=True)})
     @action(detail=False, methods=["get"], url_path="mes-telechargements")
     def mes_telechargements(self, request):

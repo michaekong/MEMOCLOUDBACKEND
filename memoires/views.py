@@ -88,11 +88,14 @@ class UniversiteMemoireViewSet(viewsets.ModelViewSet):
         univ = self.get_universite()
         memoire = serializer.save()
         memoire.universites.add(univ)
+        
         # Récupérer les universités mères et les ajouter au mémoire
-        universites_meres = univ.get_universites_meres()  # Obtention des universités mères
+        universites_meres = univ.get_universites_meres()
         for affiliation in universites_meres:
-            memoire.universites.add(affiliation.universite_mere)  # Ajout de chaque université mère au mémoire
-
+            memoire.universites.add(affiliation.universite_mere)
+        
+        # Les emails sont déjà envoyés dans le serializer.create()
+        # grâce à l'appel de envoyer_email_creation(memoire)
 
 
     @extend_schema(
