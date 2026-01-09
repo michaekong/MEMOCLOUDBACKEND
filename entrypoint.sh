@@ -48,4 +48,5 @@ echo "done ."
 echo "==============================================================="
 echo "====================== Running App ============================"
 echo "==============================================================="
-exec daphne config.asgi:application --port 8000 --bind 0.0.0.0
+# exec daphne config.asgi:application --port 8000 --bind 0.0.0.0
+exec python3 manage.py runserver 0.0.0.0:8000
