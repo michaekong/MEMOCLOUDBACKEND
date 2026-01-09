@@ -302,7 +302,7 @@ from django.db.models import Count, Avg, Q, Sum
 from rest_framework import generics, permissions
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
-from universites.models import Universite
+from universites.models import Universite, RoleUniversite
 from users.models import CustomUser
 from memoires.models import Memoire
 
@@ -435,6 +435,7 @@ class UserUniversiteStatsView(generics.GenericAPIView):
                     "type": user.type,
                     "photo_profil": request.build_absolute_uri(user.photo_profil.url) if user.photo_profil else None,
                     "linkedin": user.realisation_linkedin,
+                    "role":RoleUniversite.objects.get(utilisateur=user, universite=universite).role if RoleUniversite.objects.filter(utilisateur=user, universite=universite).exists() else "N/A",
                 },
                 "statistiques_globales": {
                     "total_memoires_auteur": total_memoires_auteur,
