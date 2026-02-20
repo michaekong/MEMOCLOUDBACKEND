@@ -138,45 +138,77 @@ class CurrentUserView(generics.RetrieveAPIView):
 
     def get_object(self):
         return self.request.user
+import ipaddress    
 # -------------------- Connexion (JWT) + anti-brute --------------------
 @method_decorator(vary_on_cookie, name="dispatch")
-class LoginView(GenericAPIView):
+class LoginView(generics.GenericAPIView):
     serializer_class = LoginSerializer
     permission_classes = [permissions.AllowAny]
 
+    def get_client_ip(self, request):
+        """
+        Récupère l'IP client de manière sécurisée.
+        Version sans proxy : utilise uniquement REMOTE_ADDR.
+        """
+        ip = request.META.get("REMOTE_ADDR")
+        
+        if not ip:
+            return None
+        
+        try:
+            # Valide IPv4 ou IPv6
+            ipaddress.ip_address(ip)
+            return ip
+        except (ValueError, TypeError):
+            return None
+
     def post(self, request, *args, **kwargs):
         ip = self.get_client_ip(request)
+        
+        # Protection si IP invalide
+        if ip is None:
+            logger.error("Unable to determine client IP")
+            return Response(
+                {"detail": "Security error."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Rate limiting
         cache_key = f"login_attempt_{ip}"
         attempts = cache.get(cache_key, 0)
+        
         if attempts >= 5:
             logger.warning(f"Too many login attempts from {ip}")
             return Response(
-                {"detail": "Too many attempts, please try again later."},
+                {"detail": f"Too many attempts, please try again {ip} later."},
                 status=status.HTTP_429_TOO_MANY_REQUESTS,
             )
 
+        # Validation credentials
         serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        
+        if not serializer.is_valid():
+            # Incrémente le compteur SEULEMENT en cas d'échec
+            cache.set(cache_key, attempts + 1, timeout=300)  # 5 minutes
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         user = serializer.validated_data["user"]
+        
+        # Succès : reset du compteur
         cache.delete(cache_key)
+        
+        # Génération JWT
         refresh = RefreshToken.for_user(user)
-        logger.info(f"Successful login for {user.email}")
-        return Response(
-            {
-                "refresh": str(refresh),
-                "access": str(refresh.access_token),
-                "user": UserSerializer(user).data,
-            }
-        )
+        logger.info(f"Successful login for {user.email} from {ip}")
 
-    def get_client_ip(self, request):
-        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-        if x_forwarded_for:
-            ip = x_forwarded_for.split(",")[0]
-        else:
-            ip = request.META.get("REMOTE_ADDR")
-        return ip
-
+        return Response({
+            "refresh": str(refresh),
+            "access": str(refresh.access_token),
+            "user": UserSerializer(user).data,
+        })
 
 # -------------------- Profil personnel --------------------
 class ProfileView(generics.RetrieveUpdateAPIView):
