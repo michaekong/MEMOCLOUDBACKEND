@@ -30,7 +30,16 @@ from .views import (
     UniversiteBulkCodesView,
     UserProfileView,
 )
-
+from .views import (
+    # ... vos vues existantes ...
+    
+    # === VUES AUDIT LOGS ===
+    UniversiteAuditLogListView,
+    UniversiteAuditLogDetailView,
+    UniversiteAuditLogStatsView,
+    UniversiteAuditLogActionsView,
+    UniversiteAuditLogExportCSVView,
+)
 router = DefaultRouter()
 router.register(r"users", UserViewSet, basename="user")  # CRUD complet
 
@@ -135,4 +144,41 @@ urlpatterns = [
 
     # modification rôle (déjà présent chez vous, on le remplace ou on ajoute)
     path('auth/<slug:univ_slug>/users/<int:pk>/role/', UpdateRoleView.as_view(), name='update-user-role'),
-]
+     # ============ AUDIT LOGS - CONSULTATION ============
+    # Liste des logs de l'université (avec filtres et pagination)
+    path(
+        "<slug:univ_slug>/audit-logs/",
+        UniversiteAuditLogListView.as_view(),
+        name="univ-audit-logs-list",
+    ),
+    
+    # Détail d'un log spécifique
+    path(
+        "<slug:univ_slug>/audit-logs/<int:pk>/",
+        UniversiteAuditLogDetailView.as_view(),
+        name="univ-audit-logs-detail",
+    ),
+    
+    # Statistiques des actions (dashboard)
+    path(
+        "<slug:univ_slug>/audit-logs/stats/",
+        UniversiteAuditLogStatsView.as_view(),
+        name="univ-audit-logs-stats",
+    ),
+    
+    # Liste des types d'actions possibles (pour les filtres frontend)
+    path(
+        "<slug:univ_slug>/audit-logs/actions/",
+        UniversiteAuditLogActionsView.as_view(),
+        name="univ-audit-logs-actions",
+    ),
+    
+    # Export CSV des logs
+    path(
+        "<slug:univ_slug>/audit-logs/export/csv/",
+        UniversiteAuditLogExportCSVView.as_view(),
+        name="univ-audit-logs-export-csv",
+    ),
+    
+    # inclusion du router
+    path("", include(router.urls)),]

@@ -326,3 +326,135 @@ class RegisterViaUniversiteSerializer2(RegisterSerializer):
             user.save(update_fields=["photo_profil"])
 
         return user
+from .models import AuditLog
+ 
+class AuditLogSerializer(serializers.ModelSerializer):
+    action_display = serializers.CharField(source='get_action_display', read_only=True)
+    severity_display = serializers.CharField(source='get_severity_display', read_only=True)
+    user_name = serializers.SerializerMethodField()
+    university_name = serializers.CharField(source='university.nom', read_only=True, default=None)
+    
+    class Meta:
+        model = AuditLog
+        fields = [
+            'id', 'created_at', 'action', 'action_display',
+            'severity', 'severity_display', 'user_email', 'user_name',
+            'user_role', 'university_name', 'target_type', 'target_id',
+            'target_repr', 'description', 'ip_address', 'request_method',
+            'previous_data', 'new_data'
+        ]
+        read_only_fields = fields
+    
+    def get_user_name(self, obj):
+        if obj.user:
+            return f"{obj.user.prenom} {obj.user.nom}"
+        return None
+
+
+class AuditLogStatsSerializer(serializers.Serializer):
+    total_logs = serializers.IntegerField()
+    today_logs = serializers.IntegerField()
+    critical_actions = serializers.IntegerField()
+    actions_distribution = serializers.ListField()
+    top_users = serializers.ListField()
+    recent_critical = serializers.ListField(child=AuditLogSerializer())    
+# users/serializers.py
+from rest_framework import serializers
+from .models import AuditLog, CustomUser
+
+
+# ============ SERIALIZERS AUDIT LOG ============
+
+class AuditLogListSerializer(serializers.ModelSerializer):
+    """Serializer pour la liste des logs (léger)."""
+    action_display = serializers.CharField(source='get_action_display', read_only=True)
+    severity_display = serializers.CharField(source='get_severity_display', read_only=True)
+    user_name = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = AuditLog
+        fields = [
+            'id', 'created_at',
+            'action', 'action_display',
+            'severity', 'severity_display',
+            'user_email', 'user_name', 'user_role',
+            'target_type', 'target_id', 'target_repr',
+            'description',
+            'ip_address',
+        ]
+        read_only_fields = fields
+    
+    def get_user_name(self, obj):
+        if obj.user:
+            return f"{obj.user.prenom} {obj.user.nom}"
+        return None
+
+
+class AuditLogDetailSerializer(serializers.ModelSerializer):
+    """Serializer pour le détail complet d'un log."""
+    action_display = serializers.CharField(source='get_action_display', read_only=True)
+    severity_display = serializers.CharField(source='get_severity_display', read_only=True)
+    user_name = serializers.SerializerMethodField()
+    university_name = serializers.CharField(source='university.nom', read_only=True, default=None)
+    
+    class Meta:
+        model = AuditLog
+        fields = [
+            'id', 'created_at',
+            'action', 'action_display',
+            'severity', 'severity_display',
+            'user', 'user_email', 'user_name', 'user_role',
+            'university', 'university_name',
+            'target_type', 'target_id', 'target_repr',
+            'previous_data', 'new_data',
+            'description',
+            'ip_address', 'user_agent', 'request_path', 'request_method',
+        ]
+        read_only_fields = fields
+    
+    def get_user_name(self, obj):
+        if obj.user:
+            return f"{obj.user.prenom} {obj.user.nom}"
+        return None
+
+
+class AuditLogStatsSerializer(serializers.Serializer):
+    """Serializer pour les statistiques du dashboard."""
+    # Stats globales
+    total_logs = serializers.IntegerField()
+    today_logs = serializers.IntegerField()
+    this_week_logs = serializers.IntegerField()
+    this_month_logs = serializers.IntegerField()
+    critical_logs = serializers.IntegerField()
+    
+    # Distributions
+    actions_distribution = serializers.ListField(
+        child=serializers.DictField()
+    )
+    severity_distribution = serializers.ListField(
+        child=serializers.DictField()
+    )
+    daily_evolution = serializers.ListField(
+        child=serializers.DictField()
+    )
+    
+    # Utilisateurs
+    top_active_users = serializers.ListField(
+        child=serializers.DictField()
+    )
+    
+    # Actions récentes
+    recent_critical = AuditLogListSerializer(many=True)
+
+
+class AuditLogActionsChoicesSerializer(serializers.Serializer):
+    """Serializer pour les choix d'actions et sévérités."""
+    actions = serializers.ListField(
+        child=serializers.DictField()
+    )
+    severities = serializers.ListField(
+        child=serializers.DictField()
+    )
+    action_counts = serializers.DictField(
+        child=serializers.IntegerField()
+    )    

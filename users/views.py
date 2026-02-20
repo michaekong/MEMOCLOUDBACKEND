@@ -180,7 +180,7 @@ class LoginView(generics.GenericAPIView):
         if attempts >= 5:
             logger.warning(f"Too many login attempts from {ip}")
             return Response(
-                {"detail": f"Too many attempts, please try again {ip} later."},
+                {"detail": f"Too many attempts, please try again later."},
                 status=status.HTTP_429_TOO_MANY_REQUESTS,
             )
 
@@ -845,3 +845,302 @@ class UpdateRoleView(generics.UpdateAPIView):
             role_obj.save()
 
         return Response({'detail': 'Rôle mis à jour.'}, status=status.HTTP_200_OK)
+# users/views.py (ajoutez ces vues à la fin)
+# users/views.py
+import csv
+import json
+from datetime import timedelta
+from django.utils import timezone
+from django.http import HttpResponse
+from django.shortcuts import get_object_or_404
+from django.db.models import Count
+from rest_framework import generics, permissions, filters, status, pagination
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from django_filters import rest_framework as df_filters
+from django_filters.filters import CharFilter, DateFromToRangeFilter, ChoiceFilter
+
+from .models import AuditLog, CustomUser
+from universites.models import Universite
+from .permissions import IsAdminInUniversite, IsSuperAdminInUniversite
+from .serializers import (
+    AuditLogListSerializer, 
+    AuditLogDetailSerializer,
+    AuditLogStatsSerializer,
+    AuditLogActionsChoicesSerializer
+)
+
+
+# ============ FILTRES ============
+
+class AuditLogFilter(df_filters.FilterSet):
+    """Filtres pour les logs d'audit."""
+    action = ChoiceFilter(
+        choices=AuditLog.ActionType.choices,
+        field_name='action',
+        lookup_expr='exact'
+    )
+    severity = ChoiceFilter(
+        choices=AuditLog.Severity.choices,
+        field_name='severity',
+        lookup_expr='exact'
+    )
+    user_email = CharFilter(field_name='user_email', lookup_expr='icontains')
+    target_type = CharFilter(field_name='target_type', lookup_expr='exact')
+    target_id = CharFilter(field_name='target_id', lookup_expr='exact')
+    created_at = DateFromToRangeFilter(field_name='created_at')
+    
+    class Meta:
+        model = AuditLog
+        fields = ['action', 'severity', 'user_email', 'target_type', 'target_id', 'created_at']
+
+
+# ============ VUES ============
+
+class UniversiteAuditLogListView(generics.ListAPIView):
+    """
+    GET /<slug:univ_slug>/audit-logs/
+    
+    Liste paginée des logs d'audit de l'université.
+    
+    Paramètres de requête (query params):
+    - ?action=MEMOIRE_DELETE_TOTAL
+    - ?severity=CRITICAL
+    - ?user_email=john@example.com
+    - ?target_type=Memoire
+    - ?target_id=123
+    - ?created_at_after=2024-01-01&created_at_before=2024-12-31
+    - ?search=motcle (recherche dans description, target_repr)
+    - ?ordering=-created_at (ou created_at, severity, action)
+    
+    Pagination:
+    - ?page=1&page_size=50
+    """
+    serializer_class = AuditLogListSerializer
+    permission_classes = [IsAdminInUniversite]
+    filter_backends = [
+        filters.SearchFilter,
+        filters.OrderingFilter,
+        df_filters.DjangoFilterBackend,
+    ]
+    filterset_class = AuditLogFilter
+    search_fields = ['user_email', 'target_repr', 'description', 'target_id']
+    ordering_fields = ['created_at', 'severity', 'action', 'user_email']
+    ordering = ['-created_at']
+    
+    class CustomPagination(pagination.PageNumberPagination):
+        page_size = 50
+        page_size_query_param = 'page_size'
+        max_page_size = 200
+    
+    pagination_class = CustomPagination
+    
+    def get_queryset(self):
+        univ_slug = self.kwargs['univ_slug']
+        univ = get_object_or_404(Universite, slug=univ_slug)
+        
+        # Retourner les logs de cette université uniquement
+        return AuditLog.objects.filter(
+            university=univ
+        ).select_related('user', 'university')
+
+
+class UniversiteAuditLogDetailView(generics.RetrieveAPIView):
+    """
+    GET /<slug:univ_slug>/audit-logs/<int:pk>/
+    
+    Détail complet d'un log spécifique.
+    """
+    serializer_class = AuditLogDetailSerializer
+    permission_classes = [IsAdminInUniversite]
+    lookup_url_kwarg = 'pk'
+    
+    def get_queryset(self):
+        univ_slug = self.kwargs['univ_slug']
+        univ = get_object_or_404(Universite, slug=univ_slug)
+        return AuditLog.objects.filter(university=univ)
+
+
+class UniversiteAuditLogStatsView(APIView):
+    """
+    GET /<slug:univ_slug>/audit-logs/stats/
+    
+    Statistiques des actions d'audit pour le dashboard.
+    """
+    permission_classes = [IsAdminInUniversite]
+    
+    def get(self, request, univ_slug):
+        univ = get_object_or_404(Universite, slug=univ_slug)
+        
+        # Base queryset pour cette université
+        base_qs = AuditLog.objects.filter(university=univ)
+        
+        # Périodes
+        today = timezone.now().date()
+        week_ago = timezone.now() - timedelta(days=7)
+        month_ago = timezone.now() - timedelta(days=30)
+        
+        # Stats globales
+        total_logs = base_qs.count()
+        today_logs = base_qs.filter(created_at__date=today).count()
+        this_week_logs = base_qs.filter(created_at__gte=week_ago).count()
+        this_month_logs = base_qs.filter(created_at__gte=month_ago).count()
+        critical_logs = base_qs.filter(severity=AuditLog.Severity.CRITICAL).count()
+        
+        # Distribution par action (top 10)
+        actions_distribution = list(
+            base_qs.values('action')
+            .annotate(count=Count('id'))
+            .order_by('-count')[:10]
+        )
+        
+        # Distribution par sévérité
+        severity_distribution = list(
+            base_qs.values('severity')
+            .annotate(count=Count('id'))
+            .order_by('-severity')
+        )
+        
+        # Évolution quotidienne (30 derniers jours)
+        daily_evolution = list(
+            base_qs.filter(created_at__gte=month_ago)
+            .extra(select={'date': "DATE(created_at)"})
+            .values('date')
+            .annotate(count=Count('id'))
+            .order_by('date')
+        )
+        
+        # Top utilisateurs actifs
+        top_active_users = list(
+            base_qs.filter(created_at__gte=month_ago)
+            .values('user_email', 'user_role')
+            .annotate(count=Count('id'))
+            .order_by('-count')[:10]
+        )
+        
+        # Actions critiques récentes (5 dernières)
+        recent_critical = base_qs.filter(
+            severity=AuditLog.Severity.CRITICAL
+        ).select_related('user')[:5]
+        
+        serializer = AuditLogStatsSerializer({
+            'total_logs': total_logs,
+            'today_logs': today_logs,
+            'this_week_logs': this_week_logs,
+            'this_month_logs': this_month_logs,
+            'critical_logs': critical_logs,
+            'actions_distribution': actions_distribution,
+            'severity_distribution': severity_distribution,
+            'daily_evolution': daily_evolution,
+            'top_active_users': top_active_users,
+            'recent_critical': recent_critical,
+        })
+        
+        return Response(serializer.data)
+
+
+class UniversiteAuditLogActionsView(APIView):
+    """
+    GET /<slug:univ_slug>/audit-logs/actions/
+    
+    Retourne la liste des types d'actions et sévérités pour les filtres frontend.
+    """
+    permission_classes = [IsAdminInUniversite]
+    
+    def get(self, request, univ_slug):
+        univ = get_object_or_404(Universite, slug=univ_slug)
+        
+        # Actions présentes dans les logs de cette université
+        present_actions = AuditLog.objects.filter(
+            university=univ
+        ).values_list('action', flat=True).distinct()
+        
+        actions = [
+            {'value': action.value, 'label': action.label}
+            for action in AuditLog.ActionType
+            if action.value in present_actions
+        ]
+        
+        severities = [
+            {'value': sev.value, 'label': sev.label}
+            for sev in AuditLog.Severity
+        ]
+        
+        # Stats par action pour indication visuelle
+        action_counts = list(
+            AuditLog.objects.filter(university=univ)
+            .values('action')
+            .annotate(count=Count('id'))
+        )
+        
+        serializer = AuditLogActionsChoicesSerializer({
+            'actions': actions,
+            'severities': severities,
+            'action_counts': {item['action']: item['count'] for item in action_counts},
+        })
+        
+        return Response(serializer.data)
+
+
+class UniversiteAuditLogExportCSVView(APIView):
+    """
+    GET /<slug:univ_slug>/audit-logs/export/csv/
+    
+    Export CSV des logs de l'université.
+    """
+    permission_classes = [IsSuperAdminInUniversite]
+    
+    def get(self, request, univ_slug):
+        univ = get_object_or_404(Universite, slug=univ_slug)
+        
+        # Récupérer tous les logs (sans pagination)
+        logs = AuditLog.objects.filter(university=univ).select_related('user')
+        
+        # Appliquer les filtres si présents
+        action = request.query_params.get('action')
+        severity = request.query_params.get('severity')
+        user_email = request.query_params.get('user_email')
+        date_from = request.query_params.get('created_at_after')
+        date_to = request.query_params.get('created_at_before')
+        
+        if action:
+            logs = logs.filter(action=action)
+        if severity:
+            logs = logs.filter(severity=severity)
+        if user_email:
+            logs = logs.filter(user_email__icontains=user_email)
+        if date_from:
+            logs = logs.filter(created_at__date__gte=date_from)
+        if date_to:
+            logs = logs.filter(created_at__date__lte=date_to)
+        
+        # Création CSV
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="audit_logs_{univ.slug}_{timezone.now().date()}.csv"'
+        
+        writer = csv.writer(response)
+        writer.writerow([
+            'Date', 'Action', 'Sévérité',
+            'Utilisateur Email', 'Utilisateur Rôle',
+            'Type Cible', 'ID Cible', 'Représentation Cible',
+            'Description', 'IP Address',
+            'Données Précédentes', 'Nouvelles Données'
+        ])
+        
+        for log in logs:
+            writer.writerow([
+                log.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+                log.get_action_display(),
+                log.get_severity_display(),
+                log.user_email,
+                log.user_role,
+                log.target_type,
+                log.target_id,
+                log.target_repr,
+                log.description,
+                log.ip_address,
+                json.dumps(log.previous_data, ensure_ascii=False) if log.previous_data else '',
+                json.dumps(log.new_data, ensure_ascii=False) if log.new_data else '',
+            ])
+        
+        return response
