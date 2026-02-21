@@ -55,6 +55,8 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         if not self.password.startswith('pbkdf2_'):
             self.password = make_password(self.password)
         super().save(*args, **kwargs)
+    def get_full_name(self):
+        return f"{self.prenom} {self.nom}" 
 
     def __str__(self):
         return f"{self.prenom} {self.nom}"
@@ -93,6 +95,7 @@ class AuditLog(models.Model):
         LOGIN = 'LOGIN', 'Connexion'
         LOGIN_FAILED = 'LOGIN_FAILED', 'Échec connexion'
         PASSWORD_RESET = 'PASSWORD_RESET', 'Réinitialisation mot de passe'
+      
     
     class Severity(models.TextChoices):
         LOW = 'LOW', 'Faible'

@@ -735,16 +735,16 @@ class NewsBySlugViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         news = serializer.save()
-        
         univ = self.get_university()
         news.publishers.add(univ)
+        
         # universités-mères via la méthode existante
         affiliations = univ.get_universites_meres()
         meres = [aff.universite_mere for aff in affiliations]
         if meres:
-            
             news.publishers.add(*meres)
-              # ==== TRAÇABILITÉ CRÉATION NEWS ====
+        
+        # ==== TRAÇABILITÉ CRÉATION NEWS ====
         create_audit_log(
             action=AuditLog.ActionType.NEWS_CREATE,
             severity=AuditLog.Severity.MEDIUM,
@@ -764,8 +764,83 @@ class NewsBySlugViewSet(viewsets.ModelViewSet):
         # ==================================
         return news
 
+    def perform_update(self, serializer):
+        """
+        PUT/PATCH /api/universites/<slug>/news/<pk>/
+        Modification d'une news avec traçabilité
+        """
+        # Récupérer l'ancienne instance avant modification
+        old_instance = self.get_object()
+        previous_data = {
+            'title': old_instance.title,
+            'headline': old_instance.headline,
+            'body': old_instance.body[:200] + '...' if len(old_instance.body) > 200 else old_instance.body,
+            'topics': old_instance.topics,
+            'is_published': old_instance.is_published,
+            'publish_at': str(old_instance.publish_at),
+        }
+        
+        # Sauvegarder les modifications
+        news = serializer.save()
+        univ = self.get_university()
+        
+        # ==== TRAÇABILITÉ MODIFICATION NEWS ====
+        create_audit_log(
+            action=AuditLog.ActionType.NEWS_UPDATE,
+            severity=AuditLog.Severity.MEDIUM,
+            user=self.request.user if self.request.user.is_authenticated else None,
+            university=univ,
+            target=news,
+            target_type='News',
+            previous_data=previous_data,
+            new_data={
+                'title': news.title,
+                'slug': news.slug,
+                'topics': news.topics,
+                'is_published': news.is_published,
+            },
+            request=self.request,
+            description=f"Modification de la news '{news.title}' dans {univ.nom}"
+        )
+        # ======================================
+        
+        return news
+
+    def perform_destroy(self, instance):
+        """
+        DELETE /api/universites/<slug>/news/<pk>/
+        Suppression directe d'une news (pas dissociation) avec traçabilité
+        """
+        univ = self.get_university()
+        
+        # Données avant suppression
+        previous_data = {
+            'title': instance.title,
+            'slug': instance.slug,
+            'topics': instance.topics,
+            'publishers': [p.nom for p in instance.publishers.all()],
+        }
+        
+        # ==== TRAÇABILITÉ SUPPRESSION NEWS (HIGH) ====
+        create_audit_log(
+            action=AuditLog.ActionType.NEWS_DELETE,
+            severity=AuditLog.Severity.HIGH,
+            user=self.request.user if self.request.user.is_authenticated else None,
+            university=univ,
+            target=instance,
+            target_type='News',
+            previous_data=previous_data,
+            request=self.request,
+            description=f"Suppression directe de la news '{instance.title}' de {univ.nom}"
+        )
+        # ===========================================
+        
+        # Suppression réelle
+        instance.delete()
+
     @action(detail=True, methods=['delete'], url_path='dissociate')
     def dissociate(self, request, slug=None, pk=None):
+        print("delete()")
         university = self.get_university()
         news = self.get_object()
         previous_publishers = [p.nom for p in news.publishers.all()]
@@ -791,6 +866,7 @@ class NewsBySlugViewSet(viewsets.ModelViewSet):
             news.delete()
             return Response({'detail': 'News supprimée (dernière université).'},
                             status=status.HTTP_204_NO_CONTENT)
+        
         # ==== TRAÇABILITÉ DISSOCIATION NEWS ====
         create_audit_log(
             action=AuditLog.ActionType.NEWS_DISSOCIATE,
@@ -825,7 +901,8 @@ class OldStudentBySlugViewSet(viewsets.ModelViewSet):
         meres = [aff.universite_mere for aff in affiliations]
         if meres:
             old.publishers.add(*meres)
-            # ==== TRAÇABILITÉ CRÉATION OLDSTUDENT ====
+        
+        # ==== TRAÇABILITÉ CRÉATION OLDSTUDENT ====
         create_audit_log(
             action=AuditLog.ActionType.OLDSTUDENT_CREATE,
             severity=AuditLog.Severity.MEDIUM,
@@ -843,6 +920,74 @@ class OldStudentBySlugViewSet(viewsets.ModelViewSet):
         # =========================================
         return old
 
+    def perform_update(self, serializer):
+        """
+        PUT/PATCH /api/universites/<slug>/oldstudents/<pk>/
+        Modification d'un ancien étudiant avec traçabilité
+        """
+        # Récupérer l'ancienne instance avant modification
+        old_instance = self.get_object()
+        previous_data = {
+            'title': old_instance.title,
+            'body': old_instance.body[:200] + '...' if len(old_instance.body) > 200 else old_instance.body,
+            'cover': str(old_instance.cover) if old_instance.cover else None,
+        }
+        
+        # Sauvegarder les modifications
+        old = serializer.save()
+        univ = self.get_university()
+        
+        # ==== TRAÇABILITÉ MODIFICATION OLDSTUDENT ====
+        create_audit_log(
+            action=AuditLog.ActionType.OLDSTUDENT_UPDATE,
+            severity=AuditLog.Severity.MEDIUM,
+            user=self.request.user if self.request.user.is_authenticated else None,
+            university=univ,
+            target=old,
+            target_type='OldStudent',
+            previous_data=previous_data,
+            new_data={
+                'title': old.title,
+                'cover': str(old.cover) if old.cover else None,
+            },
+            request=self.request,
+            description=f"Modification de l'ancien étudiant '{old.title}' dans {univ.nom}"
+        )
+        # ============================================
+        
+        return old
+
+    def perform_destroy(self, instance):
+        """
+        DELETE /api/universites/<slug>/oldstudents/<pk>/
+        Suppression directe d'un ancien étudiant (pas dissociation) avec traçabilité
+        """
+        univ = self.get_university()
+        
+        # Données avant suppression
+        previous_data = {
+            'title': instance.title,
+            'body': instance.body[:200] + '...' if len(instance.body) > 200 else instance.body,
+            'publishers': [p.nom for p in instance.publishers.all()],
+        }
+        
+        # ==== TRAÇABILITÉ SUPPRESSION OLDSTUDENT (HIGH) ====
+        create_audit_log(
+            action=AuditLog.ActionType.OLDSTUDENT_DELETE,
+            severity=AuditLog.Severity.HIGH,
+            user=self.request.user if self.request.user.is_authenticated else None,
+            university=univ,
+            target=instance,
+            target_type='OldStudent',
+            previous_data=previous_data,
+            request=self.request,
+            description=f"Suppression directe de l'ancien étudiant '{instance.title}' de {univ.nom}"
+        )
+        # ==================================================
+        
+        # Suppression réelle
+        instance.delete()
+
     @action(detail=True, methods=['delete'], url_path='dissociate')
     def dissociate(self, request, slug=None, pk=None):
         university = self.get_university()
@@ -854,7 +999,7 @@ class OldStudentBySlugViewSet(viewsets.ModelViewSet):
         old.publishers.remove(*to_remove)
 
         if not old.publishers.exists():
-            # ==== TRAÇABILITÉ SUPPRESSION OLDSTUDENT (HIGH) ====
+            # ==== TRAÇABILITÉ SUPPRESSION TOTALE OLDSTUDENT (HIGH) ====
             create_audit_log(
                 action=AuditLog.ActionType.OLDSTUDENT_DELETE,
                 severity=AuditLog.Severity.HIGH,
@@ -864,13 +1009,13 @@ class OldStudentBySlugViewSet(viewsets.ModelViewSet):
                 target_type='OldStudent',
                 previous_data={'title': old.title, 'publishers': previous_publishers},
                 request=request,
-                description=f"Suppression totale de l'ancien étudiant '{old.title}'"
+                description=f"Suppression totale de l'ancien étudiant '{old.title}' (dernière université retirée)"
             )
-            # ==================================================
+            # =========================================================
             old.delete()
             return Response({'detail': 'OldStudent supprimé (dernière université).'},
                             status=status.HTTP_204_NO_CONTENT)
-        # Dissociation uniquement
+        
         # ==== TRAÇABILITÉ DISSOCIATION OLDSTUDENT ====
         create_audit_log(
             action=AuditLog.ActionType.OLDSTUDENT_DISSOCIATE,
@@ -893,6 +1038,7 @@ class NewsGlobalViewSet(viewsets.ModelViewSet):
     serializer_class = NewsSerializer
 
     def create(self, request, *args, **kwargs):
+      
         # on attend publisher (id ou slug) dans le payload
         univ_slug = request.data.get('publisher')
         if not univ_slug:

@@ -403,7 +403,7 @@ class AuditLogDetailSerializer(serializers.ModelSerializer):
             'id', 'created_at',
             'action', 'action_display',
             'severity', 'severity_display',
-            'user', 'user_email', 'user_name', 'user_role',
+            'user_id', 'user_email', 'user_name', 'user_role',
             'university', 'university_name',
             'target_type', 'target_id', 'target_repr',
             'previous_data', 'new_data',
