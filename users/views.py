@@ -845,7 +845,6 @@ class UpdateRoleView(generics.UpdateAPIView):
             role_obj.save()
 
         return Response({'detail': 'Rôle mis à jour.'}, status=status.HTTP_200_OK)
-# users/views.py (ajoutez ces vues à la fin)
 # users/views.py
 import csv
 import json
@@ -853,7 +852,7 @@ from datetime import timedelta
 from django.utils import timezone
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
-from django.db.models import Count
+from django.db.models import Count, Q
 from rest_framework import generics, permissions, filters, status, pagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -895,6 +894,14 @@ class AuditLogFilter(df_filters.FilterSet):
         fields = ['action', 'severity', 'user_email', 'target_type', 'target_id', 'created_at']
 
 
+# ============ PAGINATION ============
+
+class CustomAuditLogPagination(pagination.PageNumberPagination):
+    page_size = 50
+    page_size_query_param = 'page_size'
+    max_page_size = 200
+
+
 # ============ VUES ============
 
 class UniversiteAuditLogListView(generics.ListAPIView):
@@ -902,19 +909,6 @@ class UniversiteAuditLogListView(generics.ListAPIView):
     GET /<slug:univ_slug>/audit-logs/
     
     Liste paginée des logs d'audit de l'université.
-    
-    Paramètres de requête (query params):
-    - ?action=MEMOIRE_DELETE_TOTAL
-    - ?severity=CRITICAL
-    - ?user_email=john@example.com
-    - ?target_type=Memoire
-    - ?target_id=123
-    - ?created_at_after=2024-01-01&created_at_before=2024-12-31
-    - ?search=motcle (recherche dans description, target_repr)
-    - ?ordering=-created_at (ou created_at, severity, action)
-    
-    Pagination:
-    - ?page=1&page_size=50
     """
     serializer_class = AuditLogListSerializer
     permission_classes = [IsAdminInUniversite]
@@ -927,22 +921,17 @@ class UniversiteAuditLogListView(generics.ListAPIView):
     search_fields = ['user_email', 'target_repr', 'description', 'target_id']
     ordering_fields = ['created_at', 'severity', 'action', 'user_email']
     ordering = ['-created_at']
-    
-    class CustomPagination(pagination.PageNumberPagination):
-        page_size = 50
-        page_size_query_param = 'page_size'
-        max_page_size = 200
-    
-    pagination_class = CustomPagination
+    pagination_class = CustomAuditLogPagination
     
     def get_queryset(self):
         univ_slug = self.kwargs['univ_slug']
         univ = get_object_or_404(Universite, slug=univ_slug)
         
-        # Retourner les logs de cette université uniquement
+        # CORRECTION: Retirer select_related('user') car pas de FK User
+        # Seulement select_related('university') car c'est la seule FK
         return AuditLog.objects.filter(
             university=univ
-        ).select_related('user', 'university')
+        ).select_related('university').order_by('-created_at')
 
 
 class UniversiteAuditLogDetailView(generics.RetrieveAPIView):
@@ -958,7 +947,8 @@ class UniversiteAuditLogDetailView(generics.RetrieveAPIView):
     def get_queryset(self):
         univ_slug = self.kwargs['univ_slug']
         univ = get_object_or_404(Universite, slug=univ_slug)
-        return AuditLog.objects.filter(university=univ)
+        # CORRECTION: Pas de select_related('user')
+        return AuditLog.objects.filter(university=univ).select_related('university')
 
 
 class UniversiteAuditLogStatsView(APIView):
@@ -1002,9 +992,11 @@ class UniversiteAuditLogStatsView(APIView):
         )
         
         # Évolution quotidienne (30 derniers jours)
+        # CORRECTION: Utiliser TruncDate au lieu de extra() pour plus de portabilité
+        from django.db.models.functions import TruncDate
         daily_evolution = list(
             base_qs.filter(created_at__gte=month_ago)
-            .extra(select={'date': "DATE(created_at)"})
+            .annotate(date=TruncDate('created_at'))
             .values('date')
             .annotate(count=Count('id'))
             .order_by('date')
@@ -1019,9 +1011,10 @@ class UniversiteAuditLogStatsView(APIView):
         )
         
         # Actions critiques récentes (5 dernières)
+        # CORRECTION: Pas de select_related('user')
         recent_critical = base_qs.filter(
             severity=AuditLog.Severity.CRITICAL
-        ).select_related('user')[:5]
+        )[:5]
         
         serializer = AuditLogStatsSerializer({
             'total_logs': total_logs,
@@ -1093,8 +1086,8 @@ class UniversiteAuditLogExportCSVView(APIView):
     def get(self, request, univ_slug):
         univ = get_object_or_404(Universite, slug=univ_slug)
         
-        # Récupérer tous les logs (sans pagination)
-        logs = AuditLog.objects.filter(university=univ).select_related('user')
+        # CORRECTION: Pas de select_related('user')
+        logs = AuditLog.objects.filter(university=univ).select_related('university')
         
         # Appliquer les filtres si présents
         action = request.query_params.get('action')

@@ -328,36 +328,6 @@ class RegisterViaUniversiteSerializer2(RegisterSerializer):
         return user
 from .models import AuditLog
  
-class AuditLogSerializer(serializers.ModelSerializer):
-    action_display = serializers.CharField(source='get_action_display', read_only=True)
-    severity_display = serializers.CharField(source='get_severity_display', read_only=True)
-    user_name = serializers.SerializerMethodField()
-    university_name = serializers.CharField(source='university.nom', read_only=True, default=None)
-    
-    class Meta:
-        model = AuditLog
-        fields = [
-            'id', 'created_at', 'action', 'action_display',
-            'severity', 'severity_display', 'user_email', 'user_name',
-            'user_role', 'university_name', 'target_type', 'target_id',
-            'target_repr', 'description', 'ip_address', 'request_method',
-            'previous_data', 'new_data'
-        ]
-        read_only_fields = fields
-    
-    def get_user_name(self, obj):
-        if obj.user:
-            return f"{obj.user.prenom} {obj.user.nom}"
-        return None
-
-
-class AuditLogStatsSerializer(serializers.Serializer):
-    total_logs = serializers.IntegerField()
-    today_logs = serializers.IntegerField()
-    critical_actions = serializers.IntegerField()
-    actions_distribution = serializers.ListField()
-    top_users = serializers.ListField()
-    recent_critical = serializers.ListField(child=AuditLogSerializer())    
 # users/serializers.py
 from rest_framework import serializers
 from .models import AuditLog, CustomUser
@@ -385,9 +355,18 @@ class AuditLogListSerializer(serializers.ModelSerializer):
         read_only_fields = fields
     
     def get_user_name(self, obj):
-        if obj.user:
-            return f"{obj.user.prenom} {obj.user.nom}"
-        return None
+        # CORRECTION: Pas de obj.user (pas de FK), utiliser les champs stockés
+        if obj.user_email:
+            # Option 1: Retourner juste l'email
+            return obj.user_email
+            
+            # Option 2: Essayer de récupérer l'utilisateur depuis la DB (requête supplémentaire)
+            # try:
+            #     user = CustomUser.objects.get(id=obj.user_id)
+            #     return f"{user.prenom} {user.nom}"
+            # except CustomUser.DoesNotExist:
+            #     return obj.user_email
+        return "Système"
 
 
 class AuditLogDetailSerializer(serializers.ModelSerializer):
@@ -395,6 +374,7 @@ class AuditLogDetailSerializer(serializers.ModelSerializer):
     action_display = serializers.CharField(source='get_action_display', read_only=True)
     severity_display = serializers.CharField(source='get_severity_display', read_only=True)
     user_name = serializers.SerializerMethodField()
+    user_info = serializers.SerializerMethodField()  # Nouveau champ enrichi
     university_name = serializers.CharField(source='university.nom', read_only=True, default=None)
     
     class Meta:
@@ -403,7 +383,7 @@ class AuditLogDetailSerializer(serializers.ModelSerializer):
             'id', 'created_at',
             'action', 'action_display',
             'severity', 'severity_display',
-            'user_id', 'user_email', 'user_name', 'user_role',
+            'user_id', 'user_email', 'user_name', 'user_role', 'user_info',
             'university', 'university_name',
             'target_type', 'target_id', 'target_repr',
             'previous_data', 'new_data',
@@ -413,9 +393,37 @@ class AuditLogDetailSerializer(serializers.ModelSerializer):
         read_only_fields = fields
     
     def get_user_name(self, obj):
-        if obj.user:
-            return f"{obj.user.prenom} {obj.user.nom}"
-        return None
+        # CORRECTION: Pas de obj.user
+        if obj.user_email:
+            return obj.user_email
+        return "Système"
+    
+    def get_user_info(self, obj):
+        """
+        Retourne les infos utilisateur enrichies.
+        Essaie de récupérer l'utilisateur depuis la DB si possible.
+        """
+        base_info = {
+            'id': obj.user_id,
+            'email': obj.user_email,
+            'role_at_log_time': obj.user_role,
+        }
+        
+        # Optionnel: récupérer l'utilisateur actuel depuis la DB
+        if obj.user_id:
+            try:
+                user = CustomUser.objects.get(id=obj.user_id)
+                base_info.update({
+                    'current_email': user.email,
+                    'current_role': getattr(user, 'type', None),
+                    'nom': f"{getattr(user, 'prenom', '')} {getattr(user, 'nom', '')}".strip() or None,
+                    'is_active': getattr(user, 'is_active', None),
+                    'status': 'Actif'
+                })
+            except CustomUser.DoesNotExist:
+                base_info['status'] = 'Utilisateur supprimé'
+        
+        return base_info
 
 
 class AuditLogStatsSerializer(serializers.Serializer):
@@ -457,4 +465,33 @@ class AuditLogActionsChoicesSerializer(serializers.Serializer):
     )
     action_counts = serializers.DictField(
         child=serializers.IntegerField()
-    )    
+    )
+
+
+# ============ SERIALIZER ADDITIONNEL (si besoin) ============
+
+class AuditLogSerializer(serializers.ModelSerializer):
+    """
+    Serializer générique pour AuditLog (utilisé dans AuditLogStatsSerializer).
+    """
+    action_display = serializers.CharField(source='get_action_display', read_only=True)
+    severity_display = serializers.CharField(source='get_severity_display', read_only=True)
+    user_name = serializers.SerializerMethodField()
+    university_name = serializers.CharField(source='university.nom', read_only=True, default=None)
+    
+    class Meta:
+        model = AuditLog
+        fields = [
+            'id', 'created_at', 'action', 'action_display',
+            'severity', 'severity_display', 'user_email', 'user_name',
+            'user_role', 'university_name', 'target_type', 'target_id',
+            'target_repr', 'description', 'ip_address', 'request_method',
+            'previous_data', 'new_data'
+        ]
+        read_only_fields = fields
+    
+    def get_user_name(self, obj):
+        # CORRECTION: Pas de obj.user
+        if obj.user_email:
+            return obj.user_email
+        return None

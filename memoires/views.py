@@ -2,7 +2,7 @@ from django.shortcuts import get_object_or_404
 from django.db.models import Avg, Count
 from rest_framework import viewsets, permissions, status, filters, generics
 from rest_framework.decorators import action
-
+from users.models import AuditLog
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from memoires.models import Memoire, Encadrement
@@ -49,9 +49,11 @@ class CommentaireListView(generics.ListAPIView):
     destroy=extend_schema(summary="Supprimer un mémoire"),
     stats=extend_schema(summary="Statistiques mémoires université"),
 )
+
+
 class UniversiteMemoireViewSet(viewsets.ModelViewSet):
     """
-    CRUD complet **filtré par université (slug)**.
+    CRUD complet **filtré par université (slug)** avec traçabilité complète.
     """
 
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
@@ -83,9 +85,48 @@ class UniversiteMemoireViewSet(viewsets.ModelViewSet):
             return [IsMemberOfUniversite()]
         return [IsAuthorOrAdminOfUniversite()]
 
-    def perform_create(self, serializer):
-        permission_classes = [IsAdminOfUniversite] 
+    def _log_action(self, action_type, severity, target_obj=None, previous_data=None, 
+                    new_data=None, description="", extra_target_repr=None):
+        """
+        Méthode utilitaire pour créer un log d'audit.
+        """
+        user = self.request.user
         univ = self.get_universite()
+        
+        # Déterminer la représentation de la cible
+        target_repr = ""
+        if extra_target_repr:
+            target_repr = extra_target_repr
+        elif target_obj:
+            if hasattr(target_obj, 'titre'):
+                target_repr = f"{target_obj.titre} (ID: {target_obj.id})"
+            else:
+                target_repr = str(target_obj)
+        
+        AuditLog.objects.create(
+            user_id=user.id if user.is_authenticated else None,
+            user_email=user.email if user.is_authenticated else 'Anonyme',
+            user_role=getattr(user, 'role', '') if user.is_authenticated else '',
+            action=action_type,
+            severity=severity,
+            university=univ,
+            target_type=target_obj.__class__.__name__ if target_obj else 'Memoire',
+            target_id=str(target_obj.id) if target_obj else '',
+            target_repr=target_repr,
+            previous_data=previous_data,
+            new_data=new_data,
+            ip_address=self.request.META.get('REMOTE_ADDR'),
+            user_agent=self.request.META.get('HTTP_USER_AGENT', '')[:512],
+            request_path=self.request.path,
+            request_method=self.request.method,
+            description=description
+        )
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        univ = self.get_universite()
+        
+        # Création du mémoire
         memoire = serializer.save()
         memoire.universites.add(univ)
         
@@ -94,17 +135,101 @@ class UniversiteMemoireViewSet(viewsets.ModelViewSet):
         for affiliation in universites_meres:
             memoire.universites.add(affiliation.universite_mere)
         
-        # Les emails sont déjà envoyés dans le serializer.create()
-        # grâce à l'appel de envoyer_email_creation(memoire)
+        # LOG: Création de mémoire
+        self._log_action(
+            action_type=AuditLog.ActionType.MEMOIRE_CREATE,
+            severity=AuditLog.Severity.MEDIUM,
+            target_obj=memoire,
+            new_data={
+                'titre': memoire.titre,
+                'annee': memoire.annee,
+                'auteur_id': str(memoire.auteur.id) if memoire.auteur else None,
+                'universites': [u.slug for u in memoire.universites.all()],
+                'domaines': [d.nom for d in memoire.domaines.all()],
+            },
+            description=f"Création du mémoire '{memoire.titre}' par {user.email}"
+        )
+        
+        return memoire
 
+    def perform_update(self, serializer):
+        user = self.request.user
+        memoire = self.get_object()
+        
+        # Sauvegarder les données avant modification
+        previous_data = {
+            'titre': memoire.titre,
+            'resume': memoire.resume,
+            'annee': memoire.annee,
+            'domaines': [d.nom for d in memoire.domaines.all()],
+            'universites': [u.slug for u in memoire.universites.all()],
+            'fichier_pdf': bool(memoire.fichier_pdf),
+            'images': bool(memoire.images),
+        }
+        
+        # Mise à jour
+        updated_memoire = serializer.save()
+        
+        # Préparer les nouvelles données
+        new_data = {
+            'titre': updated_memoire.titre,
+            'resume': updated_memoire.resume,
+            'annee': updated_memoire.annee,
+            'domaines': [d.nom for d in updated_memoire.domaines.all()],
+            'universites': [u.slug for u in updated_memoire.universites.all()],
+            'fichier_pdf': bool(updated_memoire.fichier_pdf),
+            'images': bool(updated_memoire.images),
+        }
+        
+        # LOG: Modification de mémoire
+        self._log_action(
+            action_type=AuditLog.ActionType.MEMOIRE_UPDATE,
+            severity=AuditLog.Severity.MEDIUM,
+            target_obj=updated_memoire,
+            previous_data=previous_data,
+            new_data=new_data,
+            description=f"Modification du mémoire '{updated_memoire.titre}' par {user.email}"
+        )
+        
+        return updated_memoire
+
+    def perform_destroy(self, instance):
+        user = self.request.user
+        univ = self.get_universite()
+        
+        # Sauvegarder les infos avant suppression
+        previous_data = {
+            'titre': instance.titre,
+            'resume': instance.resume[:200] if instance.resume else '',
+            'annee': instance.annee,
+            'auteur_email': instance.auteur.email if instance.auteur else None,
+            'domaines': [d.nom for d in instance.domaines.all()],
+            'nb_telechargements': instance.nb_telechargements(),
+            'nb_likes': instance.likes.count(),
+            'nb_commentaires': instance.commentaires.count(),
+        }
+        
+        memoire_id = instance.id
+        memoire_titre = instance.titre
+        
+        # LOG avant suppression (car l'objet n'existera plus après)
+        self._log_action(
+            action_type=AuditLog.ActionType.MEMOIRE_DELETE,
+            severity=AuditLog.Severity.HIGH,
+            target_obj=instance,
+            previous_data=previous_data,
+            description=f"Suppression du mémoire '{memoire_titre}' (ID: {memoire_id}) par {user.email}"
+        )
+        
+        # Suppression effective
+        instance.delete()
 
     @extend_schema(
-        summary="Statistiques mémoires de l’université",
+        summary="Statistiques mémoires de l'université",
         responses={200: MemoireUniversiteStatsSerializer},
     )
     @action(detail=False, methods=["get"], url_path="stats")
     def stats(self, request, **kwargs):
-            
         univ = self.get_universite()
         qs = self.get_queryset()
         
@@ -124,8 +249,8 @@ class UniversiteMemoireViewSet(viewsets.ModelViewSet):
                     "total_memoires": total_memoires,
                     "total_telechargements": total_telechargements,
                     "note_moyenne": note_moyenne,
-                    "total_likes": total_likes,  # Ajout du total des likes
-                    "total_commentaires": total_commentaires,  # Ajout du total des commentaires
+                    "total_likes": total_likes,
+                    "total_commentaires": total_commentaires,
                     "top_domaines": list(
                         qs.values("domaines__nom")
                         .annotate(nb=Count("id"))
@@ -134,19 +259,66 @@ class UniversiteMemoireViewSet(viewsets.ModelViewSet):
                 }
             ).data
         )
+
     @action(detail=True, methods=['delete'], url_path='suppression-totale')
     def suppression_totale(self, request, *args, **kwargs):
-        permission_classes = [IsAdminOfUniversite] 
         """
-        Suppression complète d'un mémoire ET de toutes ses relations.
+        Suppression complète d'un mémoire ET de toutes ses relations avec traçabilité.
         """
+        user = request.user
         memoire = self.get_object()
+        univ = self.get_universite()
+        
+        # Vérification des permissions manuelle (car action personnalisée)
+        if not IsAdminOfUniversite().has_object_permission(request, self, univ):
+            return Response(
+                {"detail": "Vous n'avez pas la permission d'effectuer cette action."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Préparation des données avant suppression pour l'audit
+        previous_data = {
+            'titre': memoire.titre,
+            'resume': memoire.resume[:500] if memoire.resume else '',
+            'annee': memoire.annee,
+            'auteur': {
+                'id': memoire.auteur.id if memoire.auteur else None,
+                'email': memoire.auteur.email if memoire.auteur else None,
+                'nom': f"{memoire.auteur.prenom} {memoire.auteur.nom}" if memoire.auteur else None,
+            },
+            'domaines': [{'id': d.id, 'nom': d.nom} for d in memoire.domaines.all()],
+            'universites': [{'id': u.id, 'slug': u.slug, 'nom': u.nom} for u in memoire.universites.all()],
+            'relations_count': {
+                'encadrements': memoire.encadrements.count(),
+                'notations': memoire.notations.count(),
+                'telechargements': memoire.telechargements.count(),
+                'likes': memoire.likes.count(),
+                'commentaires': memoire.commentaires.count(),
+                'signalements': memoire.signalements.count(),
+            },
+            'fichiers': {
+                'pdf': memoire.fichier_pdf.name if memoire.fichier_pdf else None,
+                'images': memoire.images.name if memoire.images else None,
+            }
+        }
+        
+        memoire_id = memoire.id
+        memoire_titre = memoire.titre
 
         with transaction.atomic():
             # 1. Log avant suppression
             print(f"[ADMIN] Suppression totale du mémoire {memoire.id} – {memoire.titre}")
 
             # 2. Suppression / détachement des relations
+            deleted_relations = {
+                'encadrements': memoire.encadrements.count(),
+                'notations': memoire.notations.count(),
+                'telechargements': memoire.telechargements.count(),
+                'likes': memoire.likes.count(),
+                'commentaires': memoire.commentaires.count(),
+                'signalements': memoire.signalements.count(),
+            }
+            
             memoire.encadrements.all().delete()
             memoire.notations.all().delete()
             memoire.telechargements.all().delete()
@@ -155,16 +327,33 @@ class UniversiteMemoireViewSet(viewsets.ModelViewSet):
             memoire.signalements.all().delete()
 
             # 3. Suppression des fichiers physiques (facultatif)
+            fichiers_supprimes = []
             if memoire.fichier_pdf:
+                fichiers_supprimes.append(memoire.fichier_pdf.name)
                 memoire.fichier_pdf.delete(save=False)
             if memoire.images:
+                fichiers_supprimes.append(memoire.images.name)
                 memoire.images.delete(save=False)
 
             # 4. Suppression finale
             memoire.delete()
 
-        return Response(status=204)
+        # LOG: Suppression totale (après transaction réussie)
+        self._log_action(
+            action_type=AuditLog.ActionType.MEMOIRE_DELETE_TOTAL,
+            severity=AuditLog.Severity.CRITICAL,
+            target_obj=None,  # L'objet est supprimé
+            extra_target_repr=f"Mémoire '{memoire_titre}' (ID: {memoire_id})",
+            previous_data={
+                **previous_data,
+                'relations_supprimees': deleted_relations,
+                'fichiers_supprimes': fichiers_supprimes,
+            },
+            description=f"Suppression TOTALE du mémoire '{memoire_titre}' (ID: {memoire_id}) avec toutes ses relations par {user.email}. "
+                       f"{deleted_relations['commentaires']} commentaires, {deleted_relations['likes']} likes supprimés."
+        )
 
+        return Response(status=status.HTTP_204_NO_CONTENT)
 class MemoireAnneesView(generics.GenericAPIView):
     permission_classes = [permissions.AllowAny]
 
