@@ -28,18 +28,29 @@ from interactions.serializers import (
     SignalementCreateSerializer,
     SignalementListSerializer,
 )
+from rest_framework import viewsets, status
+
+from rest_framework.exceptions import PermissionDenied  # ← Import manquant
+
+# Import de vos utilitaires existants
+from users.utils import create_audit_log, AuditLog, get_client_ip
+
+
 from django.template.loader import render_to_string
 from django.core.mail import EmailMessage
 from django.conf import settings
 from django.utils import timezone
 import logging
+# Import de vos utilitaires existants
+from users.utils import create_audit_log, AuditLog, get_client_ip
+
 
 logger = logging.getLogger(__name__)
 
 from memoires.models import Memoire, Notation, Signalement
 from interactions.permissions import IsAuthenticated, IsAdminOrModerateur
 
-
+from universites.permissions import IsAdminOfUniversite
 # --------------------------------------------------
 # 1. Téléchargement (tout user connecté)
 # --------------------------------------------------
@@ -229,11 +240,12 @@ class LikeOpenViewSet(viewsets.ViewSet):
         responses={201: CommentaireListSerializer},
     ),
 )
+
+
 class CommentaireOpenViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_serializer_class(self):
-        # ⭐ choisit le serializer adéquat
         if self.action == "create":
             return CommentaireCreateSerializer
         return CommentaireListSerializer
@@ -241,31 +253,230 @@ class CommentaireOpenViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return (
             Commentaire.objects.filter(modere=False)
-            .select_related("utilisateur")
+            .select_related("utilisateur", "memoire")
             .order_by("-date")
         )
 
     def perform_create(self, serializer):
-        # ⭐ on force l’utilisateur connecté + modere=False
-        serializer.save(utilisateur=self.request.user, modere=False)
+        commentaire = serializer.save(utilisateur=self.request.user, modere=False)
+        
+        # LOG: Création de commentaire (optionnel, basse sévérité)
+        create_audit_log(
+            action=AuditLog.ActionType.COMMENT_CREATE,
+            severity=AuditLog.Severity.LOW,
+            user=self.request.user,
+            target=commentaire,
+            target_type='Commentaire',
+            target_repr=f"Commentaire de {self.request.user.email} sur mémoire ID:{commentaire.memoire.id if commentaire.memoire else 'N/A'}",
+            new_data={
+                'contenu': commentaire.contenu[:200],
+                'memoire_id': str(commentaire.memoire.id) if commentaire.memoire else None,
+                'modere': commentaire.modere,
+            },
+            description=f"Nouveau commentaire créé par {self.request.user.email}",
+            request=self.request
+        )
+        
+        return commentaire
+
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
         serializer = self.get_serializer(queryset, many=True)
-        print('[BACK] Serialisé :', serializer.data[:2])  # ← on log
-        return Response(serializer.data)    
-    
+        print('[BACK] Serialisé :', serializer.data[:2])
+        return Response(serializer.data)
 
     @extend_schema(summary="Modérer un commentaire (staff ou modérateur)")
     @action(detail=True, methods=["patch"], url_path="moderer")
     def moderer(self, request, *args, **kwargs):
+        # Vérification des permissions
         if not IsAdminOrModerateur().has_permission(request, self):
-            return Response(
-                {"detail": "Réservé aux modérateurs"}, status=status.HTTP_403_FORBIDDEN
+            # LOG: Tentative échouée
+            create_audit_log(
+                action=AuditLog.ActionType.COMMENT_MODERATE,
+                severity=AuditLog.Severity.HIGH,
+                user=request.user,
+                target_type='Commentaire',
+                target_id=str(kwargs.get('pk')),
+                target_repr=f"Tentative modération commentaire ID:{kwargs.get('pk')}",
+                description=f"TENTATIVE ÉCHOUÉE de modération par {request.user.email} - Permissions insuffisantes",
+                request=request
             )
+            
+            return Response(
+                {"detail": "Réservé aux modérateurs"}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
         com = self.get_object()
+        memoire = com.memoire
+        
+        # Sauvegarder l'état avant
+        previous_state = {
+            'modere': com.modere,
+            'contenu': com.contenu[:200],
+            'date': com.date.isoformat() if com.date else None,
+        }
+        
+        # Toggle du statut de modération
         com.modere = not com.modere
         com.save()
-        return Response({"modere": com.modere})
+        
+        # LOG: Modération réussie
+        create_audit_log(
+            action=AuditLog.ActionType.COMMENT_MODERATE,
+            severity=AuditLog.Severity.MEDIUM,
+            user=request.user,
+            university=memoire.universites.first() if memoire else None,
+            target=com,
+            target_type='Commentaire',
+            target_repr=f"Commentaire ID:{com.id} sur '{memoire.titre[:50]}...'" if memoire else f"Commentaire ID:{com.id}",
+            previous_data=previous_state,
+            new_data={
+                'modere': com.modere,
+                'moderated_by': request.user.email,
+                'moderated_at': str(com.date),
+            },
+            description=f"Modération {'activée' if com.modere else 'désactivée'} par {request.user.email}",
+            request=request
+        )
+        
+        return Response({
+            "modere": com.modere, 
+            "action": "modéré" if com.modere else "démodéré"
+        })
+
+    @extend_schema(summary="Supprimer un commentaire (avec traçabilité)")
+    @action(detail=True, methods=["delete"], url_path="supprimer")
+    def supprimer(self, request, *args, **kwargs):
+        """
+        Suppression d'un commentaire avec traçabilité complète.
+        """
+        # Vérification des permissions
+        if not IsAdminOrModerateur().has_permission(request, self):
+            # LOG: Tentative échouée (CRITICAL car tentative de suppression)
+            create_audit_log(
+                action=AuditLog.ActionType.COMMENT_DELETE,
+                severity=AuditLog.Severity.CRITICAL,
+                user=request.user,
+                target_type='Commentaire',
+                target_id=str(kwargs.get('pk')),
+                target_repr=f"Tentative suppression commentaire ID:{kwargs.get('pk')}",
+                description=f"TENTATIVE ÉCHOUÉE de suppression par {request.user.email} - Permissions insuffisantes",
+                request=request
+            )
+            
+            return Response(
+                {"detail": "Réservé aux modérateurs"}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        com = self.get_object()
+        memoire = com.memoire
+        
+        # Préparation des données complètes avant suppression
+        deletion_data = {
+            'commentaire': {
+                'id': com.id,
+                'contenu': com.contenu,
+                'date': com.date.isoformat() if com.date else None,
+                'modere': com.modere,
+                'created_at': com.created_at.isoformat() if hasattr(com, 'created_at') and com.created_at else None,
+            },
+            'auteur': {
+                'id': com.utilisateur.id,
+                'email': com.utilisateur.email,
+                'nom': f"{getattr(com.utilisateur, 'prenom', '')} {getattr(com.utilisateur, 'nom', '')}".strip() or str(com.utilisateur),
+            },
+            'memoire': {
+                'id': memoire.id if memoire else None,
+                'titre': memoire.titre if memoire else None,
+                'universite': memoire.universites.first().nom if memoire and memoire.universites.first() else None,
+                'universite_slug': memoire.universites.first().slug if memoire and memoire.universites.first() else None,
+            } if memoire else None,
+            'raison': request.data.get('raison', 'Non spécifiée'),
+        }
+        
+        commentaire_id = com.id
+        commentaire_resume = com.contenu[:100] if com.contenu else "Sans contenu"
+        
+        with transaction.atomic():
+            # LOG avant suppression (CRITICAL car action destructive)
+            create_audit_log(
+                action=AuditLog.ActionType.COMMENT_DELETE,
+                severity=AuditLog.Severity.CRITICAL,
+                user=request.user,
+                university=memoire.universites.first() if memoire else None,
+                target=com,
+                target_type='Commentaire',
+                target_repr=f"Commentaire ID:{com.id} par {com.utilisateur.email}",
+                previous_data=deletion_data,
+                description=f"Suppression définitive du commentaire ID:{commentaire_id} par {request.user.email}. Raison: {deletion_data['raison']}",
+                request=request
+            )
+            
+            # Suppression effective
+            com.delete()
+        
+        return Response(
+            {
+                "detail": "Commentaire supprimé avec succès",
+                "id": commentaire_id,
+                "resume": commentaire_resume,
+                "supprime_par": request.user.email,
+                "timestamp": deletion_data['commentaire']['date'],
+            },
+            status=status.HTTP_200_OK
+        )
+
+    def perform_destroy(self, instance):
+        """
+        Surcharge de la suppression standard (DELETE sur /commentaires/{id}/)
+        avec traçabilité.
+        """
+        user = self.request.user
+        memoire = instance.memoire
+        
+        # Vérification des permissions - Utiliser IsAdminOrModerateur comme les autres méthodes
+        if not IsAdminOrModerateur().has_permission(self.request, self):
+            # LOG tentative échouée
+            create_audit_log(
+                action=AuditLog.ActionType.COMMENT_DELETE,
+                severity=AuditLog.Severity.CRITICAL,
+                user=user,
+                target_type='Commentaire',
+                target_id=str(instance.id),
+                target_repr=f"Tentative suppression directe commentaire ID:{instance.id}",
+                description=f"TENTATIVE ÉCHOUÉE de suppression directe par {user.email}",
+                request=self.request
+            )
+            # ← CORRECTION ICI : Utiliser PermissionDenied de DRF, pas PermissionError
+            raise PermissionDenied("Réservé aux modérateurs")
+        
+        # Préparation des données
+        deletion_data = {
+            'id': instance.id,
+            'contenu': instance.contenu,
+            'date': instance.date.isoformat() if instance.date else None,
+            'auteur_email': instance.utilisateur.email,
+            'memoire_titre': memoire.titre if memoire else None,
+            'method': 'perform_destroy (DELETE standard)',
+        }
+        
+        # LOG avant suppression
+        create_audit_log(
+            action=AuditLog.ActionType.COMMENT_DELETE,
+            severity=AuditLog.Severity.CRITICAL,
+            user=user,
+            university=memoire.universites.first() if memoire else None,
+            target=instance,
+            target_type='Commentaire',
+            target_repr=f"Commentaire ID:{instance.id} par {instance.utilisateur.email}",
+            previous_data=deletion_data,
+            description=f"Suppression directe (DELETE) du commentaire par {user.email}",
+            request=self.request
+        )
+        
+        instance.delete()
 
 from rest_framework import serializers
 

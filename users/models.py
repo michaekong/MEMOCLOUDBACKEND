@@ -6,13 +6,13 @@ from django.utils import timezone
 from django.contrib.auth.hashers import make_password
 from django.core.validators import RegexValidator
 from .managers import CustomUserManager
-from universites.models import Universite,RoleUniversite
 
 logger = logging.getLogger(__name__)
 
 
+# ========== CUSTOM USER ==========
+
 class CustomUser(AbstractBaseUser, PermissionsMixin):
-    # Constantes : plus facile à ré-utiliser
     class Sexe(models.TextChoices):
         M = 'M', 'Masculin'
         F = 'F', 'Féminin'
@@ -39,130 +39,175 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     )
     realisation_linkedin = models.URLField(max_length=200, blank=True, null=True)
     photo_profil = models.ImageField(upload_to='photos_profil/', blank=True, null=True)
-
     is_staff = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     date_joined = models.DateTimeField(default=timezone.now)
 
     objects = CustomUserManager()
-
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['nom', 'prenom', 'sexe']
 
     class Meta:
         verbose_name = "Utilisateur"
         verbose_name_plural = "Utilisateurs"
-        indexes = [models.Index(fields=['email'])]
 
     def save(self, *args, **kwargs):
         if not self.password.startswith('pbkdf2_'):
             self.password = make_password(self.password)
         super().save(*args, **kwargs)
+    def get_full_name(self):
+        return f"{self.prenom} {self.nom}" 
 
     def __str__(self):
         return f"{self.prenom} {self.nom}"
 
-    # ---------------- utilitaires -----------------
-    def has_role(self, role):
-        return self.type == role
 
-    def promote(self, new_role):
-        if new_role not in self.Type.values:
-            raise ValueError("Rôle inconnu")
-        old = self.type
-        self.type = new_role
-        self.save(update_fields=['type'])
-        logger.info(f"Role changed for {self.email} : {old} → {new_role}")
-        return self.type
+# ========== AUDIT LOG (défini APRÈS CustomUser, utilise lazy reference) ==========
 
-    def get_full_name(self):
-        return f"{self.prenom} {self.nom}".strip()
+class AuditLog(models.Model):
+    class ActionType(models.TextChoices):
+        MEMOIRE_CREATE = 'MEMOIRE_CREATE', 'Création de mémoire'
+        MEMOIRE_UPDATE = 'MEMOIRE_UPDATE', 'Modification de mémoire'
+        MEMOIRE_DELETE = 'MEMOIRE_DELETE', 'Suppression de mémoire'
+        MEMOIRE_DELETE_TOTAL = 'MEMOIRE_DELETE_TOTAL', 'Suppression totale de mémoire'
+        USER_ROLE_UPDATE = 'USER_ROLE_UPDATE', 'Modification de rôle utilisateur'
+        USER_REMOVE = 'USER_REMOVE', 'Retrait utilisateur université'
+        USER_DEACTIVATE = 'USER_DEACTIVATE', 'Désactivation compte'
+        USER_BULK_INVITE = 'USER_BULK_INVITE', 'Invitation en masse'
+        COMMENT_MODERATE = 'COMMENT_MODERATE', 'Modération commentaire'
+        COMMENT_DELETE = 'COMMENT_DELETE', 'Suppression commentaire'
+        SIGNALEMENT_TRAITE = 'SIGNALEMENT_TRAITE', 'Signalement traité'
+        UNIV_LOGO_UPDATE = 'UNIV_LOGO_UPDATE', 'Mise à jour logo'
+        UNIV_LOGO_DELETE = 'UNIV_LOGO_DELETE', 'Suppression logo'
+        UNIV_BULK_DELETE = 'UNIV_BULK_DELETE', 'Suppression multiple universités'
+        UNIV_AFFILIATION_CREATE = 'UNIV_AFFILIATION_CREATE', 'Création affiliation'
+        DOMAINE_CREATE = 'DOMAINE_CREATE', 'Création domaine'
+        DOMAINE_UPDATE = 'DOMAINE_UPDATE', 'Modification domaine'
+        DOMAINE_DELETE = 'DOMAINE_DELETE', 'Suppression domaine'
+        NEWS_CREATE = 'NEWS_CREATE', 'Création news'
+        NEWS_DELETE = 'NEWS_DELETE', 'Suppression news'
+        NEWS_DISSOCIATE = 'NEWS_DISSOCIATE', 'Dissociation news'
+        OLDSTUDENT_CREATE = 'OLDSTUDENT_CREATE', 'Création ancien étudiant'
+        OLDSTUDENT_DELETE = 'OLDSTUDENT_DELETE', 'Suppression ancien étudiant'
+        OLDSTUDENT_DISSOCIATE = 'OLDSTUDENT_DISSOCIATE', 'Dissociation ancien étudiant'
+        ENCADREMENT_ADD = 'ENCADREMENT_ADD', 'Ajout encadreur'
+        ENCADREMENT_REMOVE = 'ENCADREMENT_REMOVE', 'Retrait encadreur'
+        LOGIN = 'LOGIN', 'Connexion'
+        LOGIN_FAILED = 'LOGIN_FAILED', 'Échec connexion'
+        PASSWORD_RESET = 'PASSWORD_RESET', 'Réinitialisation mot de passe'
+      
+    
+    class Severity(models.TextChoices):
+        LOW = 'LOW', 'Faible'
+        MEDIUM = 'MEDIUM', 'Moyenne'
+        HIGH = 'HIGH', 'Élevée'
+        CRITICAL = 'CRITICAL', 'Critique'
 
-    def get_short_name(self):
-        return self.prenom
-# universites/models.py
-import secrets, uuid
-from django.utils import timezone
-from cryptography.fernet import Fernet
-from django.conf import settings
-
-import secrets
-import uuid
-from django.conf import settings
-from django.utils import timezone
-from cryptography.fernet import Fernet
-
-
-class InvitationCode(models.Model):
-    """
-    Code d’invitation unique, chiffré, à usage unique,
-    avec rôle **déjà défini** par l’admin qui envoie l’invitation.
-    """
-    code = models.CharField(max_length=64, unique=True, db_index=True)  # version chiffrée
-    universite = models.ForeignKey(
-        Universite, on_delete=models.CASCADE, related_name="invitation_codes"
-    )
-    role = models.CharField(
-        max_length=20, choices=RoleUniversite.ROLE_CHOICES, default="standard"
-    )
-    created_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="codes_created"
-    )
-    used_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
+    # Solution : Pas de ForeignKey vers User ici !
+    # On stocke juste les infos en dur
+    user_id = models.IntegerField(null=True, blank=True, verbose_name='ID Utilisateur')
+    user_email = models.EmailField(blank=True, verbose_name='Email utilisateur')
+    user_role = models.CharField(max_length=20, blank=True, verbose_name='Rôle utilisateur')
+    
+    action = models.CharField(max_length=30, choices=ActionType.choices, verbose_name='Type d\'action')
+    severity = models.CharField(max_length=10, choices=Severity.choices, default=Severity.MEDIUM, verbose_name='Sévérité')
+    
+    university = models.ForeignKey(
+        'universites.Universite',
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        on_delete=models.SET_NULL,
-        related_name="codes_used",
+        related_name='audit_logs',
+        verbose_name='Université concernée'
     )
+    
+    target_type = models.CharField(max_length=50, blank=True, verbose_name='Type de cible')
+    target_id = models.CharField(max_length=50, blank=True, verbose_name='ID cible')
+    target_repr = models.TextField(blank=True, verbose_name='Représentation cible')
+    
+    previous_data = models.JSONField(null=True, blank=True, verbose_name='Données avant action')
+    new_data = models.JSONField(null=True, blank=True, verbose_name='Données après action')
+    
+    ip_address = models.GenericIPAddressField(null=True, blank=True, verbose_name='Adresse IP')
+    user_agent = models.TextField(blank=True, verbose_name='User Agent')
+    request_path = models.TextField(blank=True, verbose_name='Chemin de la requête')
+    request_method = models.CharField(max_length=10, blank=True, verbose_name='Méthode HTTP')
+    description = models.TextField(blank=True, verbose_name='Description détaillée')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Date de l\'action')
+    
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Log d\'audit'
+        verbose_name_plural = 'Logs d\'audit'
+        indexes = [
+            models.Index(fields=['action', 'created_at']),
+            models.Index(fields=['user_id', 'created_at']),
+            models.Index(fields=['university', 'created_at']),
+            models.Index(fields=['severity', 'created_at']),
+            models.Index(fields=['target_type', 'target_id']),
+            models.Index(fields=['created_at']),
+        ]
+    
+    def __str__(self):
+        return f"[{self.get_severity_display()}] {self.get_action_display()} par {self.user_email or 'Système'} le {self.created_at:%d/%m/%Y %H:%M}"
+    
+    def get_user(self):
+        """Récupère l'utilisateur si existe encore."""
+        try:
+            return CustomUser.objects.get(id=self.user_id)
+        except CustomUser.DoesNotExist:
+            return None
+
+
+# ========== INVITATION CODE (même principe, sans FK vers CustomUser) ==========
+
+class InvitationCode(models.Model):
+    code = models.CharField(max_length=64, unique=True, db_index=True)
+    universite = models.ForeignKey(
+        'universites.Universite', 
+        on_delete=models.CASCADE, 
+        related_name="invitation_codes"
+    )
+    role = models.CharField(
+        max_length=20, 
+        choices=[
+            ("standard", "Standard"),
+            ("professeur", "Professeur"),
+            ("admin", "Administrateur"),
+            ("superadmin", "Super Administrateur"),
+            ("bigboss", "BIGBOSS"),
+        ], 
+        default="standard"
+    )
+    # Solution : stocker l'ID au lieu de la FK
+    created_by_id = models.IntegerField(verbose_name='Créé par (ID)')
+    created_by_email = models.EmailField(verbose_name='Créé par (email)')
+    used_by_id = models.IntegerField(null=True, blank=True, verbose_name='Utilisé par (ID)')
+    used_by_email = models.EmailField(blank=True, verbose_name='Utilisé par (email)')
     created_at = models.DateTimeField(auto_now_add=True)
+<<<<<<< HEAD
 
     def default_expiration():
         return timezone.now() + timezone.timedelta(days=7)
     
     expires_at = models.DateTimeField(default=default_expiration)
+=======
+    expires_at = models.DateTimeField(default=timezone.now() + timezone.timedelta(days=7))
+>>>>>>> 35693a5dc6472cfe295ad542980b16b196fbe64e
 
     class Meta:
         ordering = ["-created_at"]
 
-    # ------------------------------------------------------------------
-    #  Chiffrement
-    # ------------------------------------------------------------------
-    _cipher = None
+    def get_created_by(self):
+        try:
+            return CustomUser.objects.get(id=self.created_by_id)
+        except CustomUser.DoesNotExist:
+            return None
 
-    @staticmethod
-    def _get_cipher() -> Fernet:
-        if InvitationCode._cipher is None:
-            key = settings.INVITE_CODE_KEY  # 32 bytes base64 dans settings.py
-            InvitationCode._cipher = Fernet(key)
-        return InvitationCode._cipher
-
-    @staticmethod
-    def encrypt(raw: str) -> str:
-        return InvitationCode._get_cipher().encrypt(raw.encode()).decode()
-
-    @staticmethod
-    def decrypt(enc: str) -> str:
-        return InvitationCode._get_cipher().decrypt(enc.encode()).decode()
-
-    # ------------------------------------------------------------------
-    #  Life-cycle
-    # ------------------------------------------------------------------
-    def save(self, *args, **kwargs):
-        if not self.code:
-            raw = secrets.token_urlsafe(32)  # 256 bits
-            self.code = InvitationCode.encrypt(raw)
-        super().save(*args, **kwargs)
-
-    @property
-    def is_expired(self):
-        return timezone.now() > self.expires_at
-
-    @property
-    def is_used(self):
-        return self.used_by is not None
-
-    def mark_used(self, user):
-        self.used_by = user
-        self.save(update_fields=["used_by"])
-        
+    def get_used_by(self):
+        if not self.used_by_id:
+            return None
+        try:
+            return CustomUser.objects.get(id=self.used_by_id)
+        except CustomUser.DoesNotExist:
+            return None
