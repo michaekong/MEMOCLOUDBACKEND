@@ -51,7 +51,8 @@ class Commentaire(models.Model):
     utilisateur = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name='commentaires'
+        related_name='commentaires',
+        null=True
     )
     memoire = models.ForeignKey(
         Memoire,
