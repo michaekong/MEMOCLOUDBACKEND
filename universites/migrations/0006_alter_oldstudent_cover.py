@@ -3,7 +3,7 @@
 from django.db import migrations, models
 
 
-class Migration(migrations.Migration):
+class Migration(migrations.Migration): 
 
     dependencies = [
         ('universites', '0005_oldstudent'),

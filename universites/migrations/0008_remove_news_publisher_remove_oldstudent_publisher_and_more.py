@@ -14,7 +14,7 @@ class Migration(migrations.Migration):
             model_name='news',
             name='publisher',
         ),
-        migrations.RemoveField(
+        migrations.RemoveField( 
             model_name='oldstudent',
             name='publisher',
         ),
