@@ -70,6 +70,7 @@ class Encadrement(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="encadrements_memoires",
+        null=True
     )
 
     class Meta:
