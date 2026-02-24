@@ -1,6 +1,6 @@
 #!/bin/sh
 
-set -e  # Stop script on first error
+# set -e  # Stop script on first error
 
 echo "Cleaning old migrations..."
 find . -path "*/migrations/*.py" -not -name "__init__.py" -print -delete
