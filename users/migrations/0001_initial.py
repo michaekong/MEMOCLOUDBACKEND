@@ -11,10 +11,10 @@ class Migration(migrations.Migration):
 
     initial = True
 
-    dependencies = [
-        ('auth', '0012_alter_user_first_name_max_length'),
-        ('universites', '0008_remove_news_publisher_remove_oldstudent_publisher_and_more'),
-    ]
+    # dependencies = [
+    #     ('auth', '0012_alter_user_first_name_max_length'),
+    #     ('universites', '0008_remove_news_publisher_remove_oldstudent_publisher_and_more'),
+    # ]
 
     operations = [
         migrations.CreateModel(
