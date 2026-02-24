@@ -185,16 +185,12 @@ class InvitationCode(models.Model):
     used_by_id = models.IntegerField(null=True, blank=True, verbose_name='Utilisé par (ID)')
     used_by_email = models.EmailField(blank=True, verbose_name='Utilisé par (email)')
     created_at = models.DateTimeField(auto_now_add=True)
-<<<<<<< HEAD
 
     def default_expiration():
         return timezone.now() + timezone.timedelta(days=7)
     
-    expires_at = models.DateTimeField(default=default_expiration)
-=======
+  
     expires_at = models.DateTimeField(default=timezone.now() + timezone.timedelta(days=7))
->>>>>>> 35693a5dc6472cfe295ad542980b16b196fbe64e
-
     class Meta:
         ordering = ["-created_at"]
 
