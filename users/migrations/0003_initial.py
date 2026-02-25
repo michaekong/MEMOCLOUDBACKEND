@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('users', '0002_invitationcode'),
+        ('users', '0002_initial'),
         ('universites', '0001_initial'),
     ]
 
