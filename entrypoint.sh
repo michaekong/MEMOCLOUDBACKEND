@@ -4,7 +4,7 @@
 # Entrypoint Django Production
 # -------------------------------
 
-set -e  # Stop script on first error
+# set -e  # Stop script on first error
 
 echo "---------------------------------"
 echo "Applying Django migrations (fake-initial)..."
